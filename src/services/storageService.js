@@ -7,6 +7,17 @@ const supabase = supabaseUrl && supabaseAnonKey
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
+const CLOUD_DATA_TABLE = 'barberflow_app_data';
+const CLOUD_KEYS = {
+  TRANSACTIONS: 'transactions',
+  EXPENSES: 'expenses',
+  CUSTOMERS: 'customers',
+  BARBERS: 'barbers',
+  SERVICES: 'services',
+  FIXED_EXPENSES: 'fixed_expenses',
+  BANK_EXPENSES_OVERRIDE: 'bank_expenses_override'
+};
+
 const STORAGE_KEYS = {
   TRANSACTIONS: 'barberflow_transactions_v1',
   EXPENSES: 'barberflow_expenses_v1',
@@ -83,7 +94,104 @@ const getInitialMockExpenses = () => {
   ];
 };
 
+const readLocal = (key, fallback) => {
+  const value = localStorage.getItem(key);
+  return value ? JSON.parse(value) : fallback;
+};
+
+const writeLocal = (key, value) => {
+  localStorage.setItem(key, JSON.stringify(value));
+};
+
+const readCloudValue = async (key) => {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from(CLOUD_DATA_TABLE)
+    .select('data')
+    .eq('key', key)
+    .maybeSingle();
+  if (error) {
+    console.error(`No se pudo leer ${key} desde Supabase:`, error);
+    return null;
+  }
+  return data?.data ?? null;
+};
+
+const writeCloudValue = async (key, value) => {
+  if (!supabase) return;
+  const { error } = await supabase.from(CLOUD_DATA_TABLE).upsert({
+    key,
+    data: value,
+    updated_at: new Date().toISOString()
+  });
+  if (error) console.error(`No se pudo guardar ${key} en Supabase:`, error);
+};
+
+const saveSharedValue = (localKey, cloudKey, value) => {
+  writeLocal(localKey, value);
+  void writeCloudValue(cloudKey, value);
+};
+
+export const authService = {
+  isConfigured: () => Boolean(supabase),
+
+  getSession: async () => {
+    if (!supabase) return { data: { session: null }, error: null };
+    return supabase.auth.getSession();
+  },
+
+  onAuthStateChange: (callback) => {
+    if (!supabase) return { data: { subscription: { unsubscribe: () => {} } } };
+    return supabase.auth.onAuthStateChange(callback);
+  },
+
+  signIn: (email, password) => supabase
+    ? supabase.auth.signInWithPassword({ email, password })
+    : Promise.resolve({ data: null, error: new Error('Supabase no está configurado') }),
+
+  requestPasswordReset: (email) => supabase
+    ? supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin })
+    : Promise.resolve({ data: null, error: new Error('Supabase no está configurado') }),
+
+  updatePassword: (password) => supabase
+    ? supabase.auth.updateUser({ password })
+    : Promise.resolve({ data: null, error: new Error('Supabase no está configurado') }),
+
+  signOut: () => supabase
+    ? supabase.auth.signOut()
+    : Promise.resolve({ error: null })
+};
+
 export const storageService = {
+  initializeSharedData: async () => {
+    if (!supabase) return;
+
+    const sharedCollections = [
+      [STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS, getInitialMockTransactions()],
+      [STORAGE_KEYS.EXPENSES, CLOUD_KEYS.EXPENSES, getInitialMockExpenses()],
+      [STORAGE_KEYS.BARBERS, CLOUD_KEYS.BARBERS, DEFAULT_BARBERS],
+      [STORAGE_KEYS.SERVICES, CLOUD_KEYS.SERVICES, DEFAULT_SERVICES],
+      [STORAGE_KEYS.FIXED_EXPENSES, CLOUD_KEYS.FIXED_EXPENSES, DEFAULT_FIXED_EXPENSES],
+      [STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, CLOUD_KEYS.BANK_EXPENSES_OVERRIDE, {}]
+    ];
+
+    for (const [localKey, cloudKey, defaultValue] of sharedCollections) {
+      const cloudValue = await readCloudValue(cloudKey);
+      if (cloudValue !== null) {
+        writeLocal(localKey, cloudValue);
+        continue;
+      }
+
+      const localValue = readLocal(localKey, defaultValue);
+      writeLocal(localKey, localValue);
+      await writeCloudValue(cloudKey, localValue);
+    }
+
+    const customers = await storageService.getCustomersShared();
+    writeLocal(STORAGE_KEYS.CUSTOMERS, customers);
+    await writeCloudValue(CLOUD_KEYS.CUSTOMERS, customers);
+  },
+
   // --- ROLE & PIN MANAGEMENT ---
   getUserRole: () => {
     return localStorage.getItem(STORAGE_KEYS.USER_ROLE) || 'barber'; // 'admin' | 'barber'
@@ -114,10 +222,9 @@ export const storageService = {
   },
 
   setBankExpensesOverride: (yearMonthStr, amount) => {
-    const data = localStorage.getItem(STORAGE_KEYS.BANK_EXPENSES_OVERRIDE);
-    const obj = data ? JSON.parse(data) : {};
+    const obj = readLocal(STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, {});
     obj[yearMonthStr] = Number(amount) || 0;
-    localStorage.setItem(STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, JSON.stringify(obj));
+    saveSharedValue(STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, CLOUD_KEYS.BANK_EXPENSES_OVERRIDE, obj);
     return obj[yearMonthStr];
   },
 
@@ -128,7 +235,7 @@ export const storageService = {
   },
 
   saveFixedExpenses: (fixedObj) => {
-    localStorage.setItem(STORAGE_KEYS.FIXED_EXPENSES, JSON.stringify(fixedObj));
+    saveSharedValue(STORAGE_KEYS.FIXED_EXPENSES, CLOUD_KEYS.FIXED_EXPENSES, fixedObj);
   },
 
   updateFixedExpense: (key, amount) => {
@@ -148,7 +255,7 @@ export const storageService = {
   },
 
   saveBarbers: (barbers) => {
-    localStorage.setItem(STORAGE_KEYS.BARBERS, JSON.stringify(barbers));
+    saveSharedValue(STORAGE_KEYS.BARBERS, CLOUD_KEYS.BARBERS, barbers);
   },
 
   addBarber: ({ name, commissionRate }) => {
@@ -178,7 +285,7 @@ export const storageService = {
   },
 
   saveServices: (services) => {
-    localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(services));
+    saveSharedValue(STORAGE_KEYS.SERVICES, CLOUD_KEYS.SERVICES, services);
   },
 
   addCatalogItem: ({ name, type, price }) => {
@@ -209,13 +316,7 @@ export const storageService = {
 
   // --- TRANSACTIONS (DAILY CASH) WITH AUDIT TRAIL ---
   getTransactions: () => {
-    const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-    if (!data) {
-      const initial = getInitialMockTransactions();
-      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(initial));
-      return initial;
-    }
-    return JSON.parse(data);
+    return readLocal(STORAGE_KEYS.TRANSACTIONS, getInitialMockTransactions());
   },
 
   addTransaction: (tx) => {
@@ -230,7 +331,7 @@ export const storageService = {
       editHistory: []
     };
     transactions.unshift(newTx);
-    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+    saveSharedValue(STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS, transactions);
     storageService.syncCustomersFromTransactions(transactions);
     return newTx;
   },
@@ -263,26 +364,20 @@ export const storageService = {
       return t;
     });
 
-    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(updated));
+    saveSharedValue(STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS, updated);
     storageService.syncCustomersFromTransactions(updated);
     return updated;
   },
 
   deleteTransaction: (id) => {
     const transactions = storageService.getTransactions().filter(t => t.id !== id);
-    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+    saveSharedValue(STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS, transactions);
     storageService.syncCustomersFromTransactions(transactions);
   },
 
   // --- EXPENSES (EGRESOS) ---
   getExpenses: () => {
-    const data = localStorage.getItem(STORAGE_KEYS.EXPENSES);
-    if (!data) {
-      const initial = getInitialMockExpenses();
-      localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(initial));
-      return initial;
-    }
-    return JSON.parse(data);
+    return readLocal(STORAGE_KEYS.EXPENSES, getInitialMockExpenses());
   },
 
   addExpense: (expense) => {
@@ -293,23 +388,20 @@ export const storageService = {
       amount: Number(expense.amount) || 0
     };
     expenses.unshift(newEx);
-    localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(expenses));
+    saveSharedValue(STORAGE_KEYS.EXPENSES, CLOUD_KEYS.EXPENSES, expenses);
     return newEx;
   },
 
   deleteExpense: (id) => {
     const expenses = storageService.getExpenses().filter(e => e.id !== id);
-    localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(expenses));
+    saveSharedValue(STORAGE_KEYS.EXPENSES, CLOUD_KEYS.EXPENSES, expenses);
   },
 
   // --- CUSTOMERS ---
   getCustomers: () => {
     const data = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
-    if (!data) {
-      const txs = storageService.getTransactions();
-      return storageService.syncCustomersFromTransactions(txs);
-    }
-    return JSON.parse(data);
+    if (data) return JSON.parse(data);
+    return storageService.syncCustomersFromTransactions(storageService.getTransactions());
   },
 
   updateCustomerBirthdate: (customerId, birthdate) => {
@@ -325,6 +417,12 @@ export const storageService = {
 
     if (!supabase) return storageService.getCustomers();
 
+    const sharedCustomers = await readCloudValue(CLOUD_KEYS.CUSTOMERS);
+    if (sharedCustomers !== null) {
+      writeLocal(STORAGE_KEYS.CUSTOMERS, sharedCustomers);
+      return sharedCustomers;
+    }
+
     const { data, error } = await supabase
       .from('barberflow_customers')
       .select('id, data')
@@ -338,6 +436,7 @@ export const storageService = {
     if (data.length > 0) {
       const customers = data.map(row => row.data);
       localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
+      await writeCloudValue(CLOUD_KEYS.CUSTOMERS, customers);
       return customers;
     }
 
@@ -349,15 +448,19 @@ export const storageService = {
   },
 
   syncCustomersToCloud: async (customers) => {
-    if (!supabase || !customers?.length) return;
+    if (!supabase || !customers) return;
+
+    await writeCloudValue(CLOUD_KEYS.CUSTOMERS, customers);
 
     const rows = customers.map(customer => ({
       id: customer.id,
       data: customer,
       updated_at: new Date().toISOString()
     }));
-    const { error } = await supabase.from('barberflow_customers').upsert(rows);
-    if (error) console.error('No se pudo sincronizar la base de clientes:', error);
+    if (rows.length > 0) {
+      const { error } = await supabase.from('barberflow_customers').upsert(rows);
+      if (error) console.error('No se pudo sincronizar la base de clientes:', error);
+    }
   },
 
   syncCustomersFromTransactions: (transactions) => {
@@ -399,7 +502,7 @@ export const storageService = {
 
     const customerList = Object.values(customerMap);
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customerList));
-    storageService.syncCustomersToCloud(customerList);
+    void storageService.syncCustomersToCloud(customerList);
     return customerList;
   },
 

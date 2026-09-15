@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { storageService } from '../services/storageService';
-import { Calendar, Users, TrendingUp, Settings, Scissors, DollarSign, Lock, ShieldCheck, UserCheck } from 'lucide-react';
+import { Calendar, Users, TrendingUp, Settings, Scissors, DollarSign, Lock, ShieldCheck, LogOut } from 'lucide-react';
 
-export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole, onOpenSettings }) {
+export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole, onOpenSettings, onSignOut }) {
   const [showPinModal, setShowPinModal] = useState(false);
   const [inputPin, setInputPin] = useState('');
   const [pinError, setPinError] = useState(false);
@@ -185,6 +185,13 @@ export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole,
               title="Configuración"
             >
               <Settings size={18} />
+            </button>
+            <button
+              onClick={onSignOut}
+              className="btn btn-secondary btn-sm"
+              title="Cerrar sesión"
+            >
+              <LogOut size={16} />
             </button>
           </div>
         </div>

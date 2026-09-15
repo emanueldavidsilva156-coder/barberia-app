@@ -26,12 +26,15 @@ Aplicación web profesional diseñada a medida para la barbería de **Ema y Dieg
 
 ## Publicación y base compartida de clientes
 
-La aplicación funciona sin servidor usando `localStorage`, pero esos datos solo existen en un navegador. Para compartir la base entre celulares hay que configurar Supabase antes de publicar.
+La aplicación usa `localStorage` como respaldo local y Supabase como almacenamiento compartido. Con Supabase configurado, todos los dispositivos pueden consultar las mismas ventas, egresos, clientes, catálogo y valores contables.
+
+El acceso de la aplicación usa un usuario único compartido: `barberia`, con la contraseña definida para el equipo. No se usa validación por email.
 
 ### 1. Crear la base en Supabase
 
 1. Crear un proyecto en [Supabase](https://supabase.com).
 2. Abrir **SQL Editor**, pegar el contenido de `supabase/schema.sql` y ejecutarlo.
+	Esto crea las tablas compartidas para clientes, ventas, egresos, catálogo y configuración.
 3. Copiar la URL del proyecto y la clave pública `anon`.
 4. Crear un archivo `.env.local` a partir de `.env.example` y completar:
 ```env

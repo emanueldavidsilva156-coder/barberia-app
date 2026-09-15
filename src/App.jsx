@@ -6,7 +6,7 @@ import MonthlySummary from './components/MonthlySummary';
 import SettingsModal from './components/SettingsModal';
 import { storageService } from './services/storageService';
 
-export default function App() {
+export default function App({ onSignOut }) {
   const [activeTab, setActiveTab] = useState('caja'); // 'caja' | 'clientes' | 'resumen'
   const [userRole, setUserRole] = useState(storageService.getUserRole()); // 'admin' | 'barber'
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -21,6 +21,7 @@ export default function App() {
         userRole={userRole}
         setUserRole={setUserRole}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onSignOut={onSignOut}
       />
 
       {/* Main View Content */}
