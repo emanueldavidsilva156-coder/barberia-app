@@ -93,11 +93,8 @@ export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole,
             </div>
             <div>
               <h1 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0, lineHeight: 1.1 }}>
-                Barber<span style={{ color: 'var(--accent-gold)' }}>Flow</span>
+                BARBERIA <span style={{ color: 'var(--accent-gold)' }}>RADIKAL</span>
               </h1>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                Studio Ema & Diego
-              </span>
             </div>
           </div>
 
