@@ -46,7 +46,7 @@ export default function App({ onSignOut }) {
         borderTop: '1px solid var(--border-color)',
         background: 'rgba(15, 23, 42, 0.6)'
       }}>
-        BarberFlow Pro &copy; {new Date().getFullYear()} - Sistema de Gestión, Caja Diaria y Finanzas para Ema y Diego Barbería.
+        RADIKAL &copy; {new Date().getFullYear()} - Sistema de Gestión, Caja Diaria y Finanzas para la barbería.
       </footer>
 
     </div>

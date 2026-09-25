@@ -305,7 +305,7 @@ export default function DailyCashRegister() {
       </div>
 
       {/* Summary KPI Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+      <div className="stats-grid" style={{ marginBottom: '24px' }}>
         
         {/* Total Facturado */}
         <div className="stat-card">
@@ -368,7 +368,7 @@ export default function DailyCashRegister() {
       </div>
 
       {/* Main Grid: Entry Forms & Lists */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }}>
+      <div className="daily-layout" style={{ gap: '24px' }}>
         
         {/* Toggle between Ingresos (Ventas) y Egresos */}
         <div className="toggle-group" style={{ maxWidth: '400px', margin: '0 auto 12px auto' }}>

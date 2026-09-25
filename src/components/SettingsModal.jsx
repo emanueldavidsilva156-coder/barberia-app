@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { storageService } from '../services/storageService';
-import { Settings, Users, Scissors, Download, Upload, Github, Globe, Plus, Trash2, CheckCircle2, Key, Edit3, Save, ShoppingBag, Tag } from 'lucide-react';
+import { Settings, Users, Scissors, Download, Upload, Github, Globe, Plus, Trash2, CheckCircle2, Key, Edit3, Save, ShoppingBag, Tag, ClipboardList } from 'lucide-react';
 
 export default function SettingsModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('barberos');
@@ -25,6 +25,7 @@ export default function SettingsModal({ isOpen, onClose }) {
 
   const [catalogFilter, setCatalogFilter] = useState('todos');
   const [importStatus, setImportStatus] = useState('');
+  const [auditLog, setAuditLog] = useState([]);
 
   useEffect(() => {
     if (isOpen) {
@@ -36,6 +37,7 @@ export default function SettingsModal({ isOpen, onClose }) {
     setBarbers(storageService.getBarbers());
     setServices(storageService.getServices());
     setAdminPin(storageService.getAdminPIN());
+    setAuditLog(storageService.getTransactionAuditLog());
   };
 
   const handleSavePin = (e) => {
@@ -210,6 +212,13 @@ export default function SettingsModal({ isOpen, onClose }) {
             style={{ borderRadius: 0, padding: '12px 16px', color: activeTab === 'seguridad' ? '#a78bfa' : 'var(--text-muted)', borderBottom: activeTab === 'seguridad' ? '2px solid #a78bfa' : 'none' }}
           >
             🔑 Clave PIN Admin
+          </button>
+          <button
+            onClick={() => setActiveTab('auditoria')}
+            className="toggle-btn"
+            style={{ borderRadius: 0, padding: '12px 16px', color: activeTab === 'auditoria' ? '#fb7185' : 'var(--text-muted)', borderBottom: activeTab === 'auditoria' ? '2px solid #fb7185' : 'none' }}
+          >
+            <ClipboardList size={14} /> Auditoría ({auditLog.length})
           </button>
           <button 
             onClick={() => setActiveTab('github')}
@@ -428,6 +437,46 @@ export default function SettingsModal({ isOpen, onClose }) {
                 </button>
                 {pinStatusMsg && <div style={{ fontSize: '0.82rem', color: '#34d399', marginTop: '10px', textAlign: 'center' }}>{pinStatusMsg}</div>}
               </form>
+            </div>
+          )}
+
+          {activeTab === 'auditoria' && (
+            <div>
+              <h4 style={{ marginBottom: '8px', color: '#fb7185', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ClipboardList size={20} /> Historial de modificaciones
+              </h4>
+              <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
+                Registro de cambios realizados sobre importes, propinas, servicios, barberos y medios de cobro.
+              </p>
+
+              {auditLog.length === 0 ? (
+                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-sm)' }}>
+                  Todavía no hay movimientos modificados.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {auditLog.map((entry, index) => (
+                    <div key={`${entry.transactionId}-${entry.editedAt}-${index}`} style={{ padding: '16px', background: 'rgba(15, 23, 42, 0.65)', border: '1px solid var(--border-color)', borderLeft: '3px solid #fb7185', borderRadius: 'var(--radius-sm)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                        <strong style={{ color: 'var(--text-main)' }}>{entry.clientName}</strong>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{entry.editedAt}</span>
+                      </div>
+                      <div style={{ display: 'grid', gap: '5px', color: 'var(--text-muted)', fontSize: '0.86rem' }}>
+                        <span>Movimiento: {entry.transactionDate} | {entry.transactionId}</span>
+                        <span>Modificó: <strong style={{ color: '#fbbf24' }}>{entry.editedBy}</strong></span>
+                        <span>Motivo: {entry.editReason}</span>
+                        {(entry.oldAmount !== entry.newAmount || entry.oldTip !== entry.newTip) && (
+                          <span>Monto / propina: ${Number(entry.oldAmount || 0).toLocaleString('es-AR')} + ${Number(entry.oldTip || 0).toLocaleString('es-AR')} → ${Number(entry.newAmount || 0).toLocaleString('es-AR')} + ${Number(entry.newTip || 0).toLocaleString('es-AR')}</span>
+                        )}
+                        {entry.oldPaymentMethod !== entry.newPaymentMethod && (
+                          <span>Medio de cobro: <strong style={{ color: '#fb7185' }}>{entry.oldPaymentMethod || 'sin informar'}</strong> → <strong style={{ color: '#34d399' }}>{entry.newPaymentMethod || 'sin informar'}</strong></span>
+                        )}
+                        {entry.oldService !== entry.newService && <span>Servicio: {entry.oldService || 'sin informar'} → {entry.newService || 'sin informar'}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

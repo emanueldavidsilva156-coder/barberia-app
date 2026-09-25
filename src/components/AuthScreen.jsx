@@ -22,7 +22,7 @@ export default function AuthScreen({ onLogin }) {
           <div style={{ width: '56px', height: '56px', margin: '0 auto 14px', display: 'grid', placeItems: 'center', borderRadius: '14px', background: 'linear-gradient(135deg, var(--primary), #f59e0b)', color: '#fff' }}>
             <Scissors size={28} />
           </div>
-          <h1 style={{ color: 'var(--text-main)', marginBottom: '6px' }}>BarberFlow</h1>
+          <h1 style={{ color: 'var(--text-main)', marginBottom: '6px' }}>RADIKAL</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
             Ingresá para acceder a la barbería
           </p>

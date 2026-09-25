@@ -97,6 +97,38 @@ h1, h2, h3, h4, h5, h6 {
   transform: translateY(-2px);
 }
 
+.main-content {
+  padding: 10px clamp(10px, 2vw, 20px) 0;
+}
+
+.stats-grid,
+.daily-layout,
+.daily-forms-grid,
+.fixed-expense-grid,
+.accounting-grid,
+.two-col-form {
+  display: grid;
+  gap: 16px;
+}
+
+.stats-grid {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.daily-layout {
+  grid-template-columns: 1fr;
+}
+
+.daily-forms-grid,
+.fixed-expense-grid,
+.accounting-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.two-col-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;
@@ -289,6 +321,31 @@ h1, h2, h3, h4, h5, h6 {
   filter: drop-shadow(0 2px 8px rgba(245, 158, 11, 0.6));
 }
 
+@media (max-width: 980px) {
+  .desktop-header {
+    padding: 10px 14px !important;
+  }
+
+  .header-row {
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  .header-brand {
+    flex: 1 1 100% !important;
+  }
+
+  .desktop-nav-menu {
+    display: none !important;
+  }
+
+  .header-actions {
+    width: 100% !important;
+    justify-content: space-between !important;
+    flex-wrap: wrap !important;
+  }
+}
+
 @media (max-width: 768px) {
   .mobile-nav {
     display: flex;
@@ -296,6 +353,52 @@ h1, h2, h3, h4, h5, h6 {
 
   .main-content {
     padding-bottom: 80px !important;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .glass-panel {
+    border-radius: 14px;
+  }
+
+  .btn {
+    white-space: normal;
+  }
+
+  .stats-grid,
+  .daily-forms-grid,
+  .fixed-expense-grid,
+  .accounting-grid,
+  .two-col-form {
+    grid-template-columns: 1fr !important;
+  }
+
+  .custom-table-container {
+    overflow-x: auto;
+  }
+
+  .custom-table {
+    min-width: 640px;
+  }
+}
+
+@media (max-width: 540px) {
+  .header-actions {
+    gap: 8px !important;
+  }
+
+  .header-actions .btn,
+  .header-actions .badge {
+    font-size: 0.72rem !important;
+    padding: 7px 10px !important;
+  }
+
+  .header-brand h1 {
+    font-size: 1.05rem !important;
+  }
+
+  .header-brand span {
+    font-size: 0.64rem !important;
   }
 }
 

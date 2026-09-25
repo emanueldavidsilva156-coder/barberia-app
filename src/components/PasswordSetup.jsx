@@ -43,7 +43,7 @@ export default function PasswordSetup() {
     <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: '24px' }}>
       <section className="glass-panel" style={{ width: '100%', maxWidth: '420px', padding: '32px' }}>
         <h2 style={{ color: 'var(--text-main)', marginBottom: '8px' }}><LockKeyhole size={22} /> Crear contraseña</h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>Elegí la contraseña para tu cuenta de BarberFlow.</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>Elegí la contraseña para tu cuenta de RADIKAL.</p>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label className="form-label">Nueva contraseña</label>

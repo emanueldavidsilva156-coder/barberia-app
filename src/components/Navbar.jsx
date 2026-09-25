@@ -58,7 +58,7 @@ export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole,
   return (
     <>
       {/* Desktop & Tablet Header */}
-      <header style={{
+      <header className="desktop-header" style={{
         background: 'rgba(15, 23, 42, 0.95)',
         backdropFilter: 'blur(12px)',
         borderBottom: '1px solid var(--border-color)',
@@ -67,7 +67,7 @@ export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole,
         zIndex: 90,
         padding: '12px 24px'
       }}>
-        <div style={{
+        <div className="header-row" style={{
           maxWidth: '1200px',
           margin: '0 auto',
           display: 'flex',
@@ -77,7 +77,7 @@ export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole,
           gap: '12px'
         }}>
           {/* Logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} onClick={() => handleTabClick('caja')}>
+          <div className="header-brand" style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} onClick={() => handleTabClick('caja')}>
             <div style={{
               width: '40px',
               height: '40px',
@@ -154,7 +154,7 @@ export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole,
           </nav>
 
           {/* Role Switcher Badge & Settings */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {userRole === 'admin' ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '6px 12px' }}>

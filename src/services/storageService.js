@@ -30,6 +30,8 @@ const STORAGE_KEYS = {
   BANK_EXPENSES_OVERRIDE: 'barberflow_bank_expenses_override_v1'
 };
 
+const OPERATIONAL_DATA_RESET_KEY = 'barberflow_operational_data_reset_v2';
+
 const DEFAULT_BARBERS = [
   { id: 'ema', name: 'Ema', commissionRate: 0.40, phone: '', active: true },
   { id: 'diego', name: 'Diego', commissionRate: 0.40, phone: '', active: true },
@@ -47,51 +49,13 @@ const DEFAULT_SERVICES = [
   { id: 'pomada', name: 'Pomada Mate (Producto)', type: 'producto', price: 5000 }
 ];
 
-const DEFAULT_FIXED_EXPENSES = {
-  alquiler: 180000,
-  alarma: 15000,
-  internet: 20000,
-  luz: 45000,
-  dispenser_agua: 9000
-};
+const DEFAULT_FIXED_EXPENSES = {};
 
 const getCustomerId = (key) => {
   const hash = Array.from(key).reduce((value, character) => (
     ((value << 5) - value + character.charCodeAt(0)) | 0
   ), 0);
   return `cust-${Math.abs(hash)}`;
-};
-
-const getInitialMockTransactions = () => {
-  const today = new Date().toISOString().split('T')[0];
-  const currentMonthPrefix = today.substring(0, 7);
-
-  const dateObj = new Date();
-  dateObj.setMonth(dateObj.getMonth() - 1);
-  const prevMonthPrefix = dateObj.toISOString().substring(0, 7);
-
-  return [
-    { id: 'tx-1', date: `${currentMonthPrefix}-01`, clientName: 'Martín Gómez', clientPhone: '+5491145678901', birthdate: '09-13', service: 'Combo Corte + Barba', amount: 8500, tip: 1000, paymentMethod: 'transferencia', barberId: 'ema' },
-    { id: 'tx-2', date: `${currentMonthPrefix}-01`, clientName: 'Lucas Rodríguez', clientPhone: '+5491156789012', birthdate: '05-20', service: 'Corte de Pelo', amount: 6000, tip: 500, paymentMethod: 'contado', barberId: 'diego' },
-    { id: 'tx-3', date: `${currentMonthPrefix}-02`, clientName: 'Gonzalo Pérez', clientPhone: '+5491167890123', birthdate: '11-04', service: 'Arreglo de Barba', amount: 4000, tip: 0, paymentMethod: 'contado', barberId: 'ema' },
-    { id: 'tx-4', date: `${currentMonthPrefix}-02`, clientName: 'Facundo Silva', clientPhone: '+5491178901234', birthdate: '02-18', service: 'Combo Corte + Barba', amount: 8500, tip: 1500, paymentMethod: 'transferencia', barberId: 'barbero_invitado' },
-    { id: 'tx-5', date: today, clientName: 'Nicolás Rossi', clientPhone: '+5491189012345', birthdate: '09-13', service: 'Corte de Pelo', amount: 6000, tip: 1000, paymentMethod: 'transferencia', barberId: 'ema' },
-    { id: 'tx-6', date: today, clientName: 'Julian Alvarez', clientPhone: '+5491190123456', birthdate: '01-31', service: 'Combo Corte + Barba', amount: 8500, tip: 500, paymentMethod: 'contado', barberId: 'diego' },
-
-    { id: 'tx-prev-1', date: `${prevMonthPrefix}-10`, clientName: 'Carlos Benítez', clientPhone: '+5491133334444', birthdate: '08-12', service: 'Corte de Pelo', amount: 6000, tip: 500, paymentMethod: 'contado', barberId: 'ema' },
-    { id: 'tx-prev-2', date: `${prevMonthPrefix}-15`, clientName: 'Mateo Fernández', clientPhone: '+5491155556666', birthdate: '03-25', service: 'Combo Corte + Barba', amount: 8500, tip: 1000, paymentMethod: 'transferencia', barberId: 'diego' }
-  ];
-};
-
-const getInitialMockExpenses = () => {
-  const today = new Date().toISOString().split('T')[0];
-  const currentMonthPrefix = today.substring(0, 7);
-
-  return [
-    { id: 'ex-1', date: `${currentMonthPrefix}-01`, category: 'insumos', description: 'Papel cuello y navajas', amount: 7200, paymentMethod: 'banco_transferencia', barberId: null },
-    { id: 'ex-2', date: `${currentMonthPrefix}-05`, category: 'adelanto', description: 'Adelanto de sueldo Ema', amount: 10000, paymentMethod: 'caja_efectivo', barberId: 'ema' },
-    { id: 'ex-3', date: today, category: 'adelanto', description: 'Adelanto de sueldo Diego', amount: 5000, paymentMethod: 'caja_efectivo', barberId: 'diego' }
-  ];
 };
 
 const readLocal = (key, fallback) => {
@@ -164,11 +128,28 @@ export const authService = {
 
 export const storageService = {
   initializeSharedData: async () => {
+    if (localStorage.getItem(OPERATIONAL_DATA_RESET_KEY) !== '1') {
+      const emptyOperationalData = [
+        [STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS, []],
+        [STORAGE_KEYS.EXPENSES, CLOUD_KEYS.EXPENSES, []],
+        [STORAGE_KEYS.CUSTOMERS, CLOUD_KEYS.CUSTOMERS, []],
+        [STORAGE_KEYS.FIXED_EXPENSES, CLOUD_KEYS.FIXED_EXPENSES, {}],
+        [STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, CLOUD_KEYS.BANK_EXPENSES_OVERRIDE, {}]
+      ];
+
+      for (const [localKey, cloudKey, emptyValue] of emptyOperationalData) {
+        writeLocal(localKey, emptyValue);
+        await writeCloudValue(cloudKey, emptyValue);
+      }
+
+      localStorage.setItem(OPERATIONAL_DATA_RESET_KEY, '1');
+    }
+
     if (!supabase) return;
 
     const sharedCollections = [
-      [STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS, getInitialMockTransactions()],
-      [STORAGE_KEYS.EXPENSES, CLOUD_KEYS.EXPENSES, getInitialMockExpenses()],
+      [STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS, []],
+      [STORAGE_KEYS.EXPENSES, CLOUD_KEYS.EXPENSES, []],
       [STORAGE_KEYS.BARBERS, CLOUD_KEYS.BARBERS, DEFAULT_BARBERS],
       [STORAGE_KEYS.SERVICES, CLOUD_KEYS.SERVICES, DEFAULT_SERVICES],
       [STORAGE_KEYS.FIXED_EXPENSES, CLOUD_KEYS.FIXED_EXPENSES, DEFAULT_FIXED_EXPENSES],
@@ -248,6 +229,19 @@ export const storageService = {
     return updated;
   },
 
+  addFixedExpense: (name, amount) => {
+    const key = `${name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${Date.now()}`;
+    return storageService.updateFixedExpense(key, amount);
+  },
+
+  deleteFixedExpense: (key) => {
+    const current = storageService.getFixedExpenses();
+    const updated = { ...current };
+    delete updated[key];
+    storageService.saveFixedExpenses(updated);
+    return updated;
+  },
+
   // --- BARBERS MANAGEMENT ---
   getBarbers: () => {
     const data = localStorage.getItem(STORAGE_KEYS.BARBERS);
@@ -316,7 +310,7 @@ export const storageService = {
 
   // --- TRANSACTIONS (DAILY CASH) WITH AUDIT TRAIL ---
   getTransactions: () => {
-    return readLocal(STORAGE_KEYS.TRANSACTIONS, getInitialMockTransactions());
+    return readLocal(STORAGE_KEYS.TRANSACTIONS, []);
   },
 
   addTransaction: (tx) => {
@@ -350,6 +344,12 @@ export const storageService = {
           newAmount: Number(updatedFields.amount) || t.amount,
           oldTip: t.tip,
           newTip: Number(updatedFields.tip) || t.tip
+          ,oldPaymentMethod: t.paymentMethod || '',
+          newPaymentMethod: updatedFields.paymentMethod || t.paymentMethod || '',
+          oldService: t.service || '',
+          newService: updatedFields.service || t.service || '',
+          oldBarberId: t.barberId || '',
+          newBarberId: updatedFields.barberId || t.barberId || ''
         };
 
         return {
@@ -369,6 +369,18 @@ export const storageService = {
     return updated;
   },
 
+  getTransactionAuditLog: () => storageService.getTransactions()
+    .flatMap(transaction => (transaction.editHistory || []).map(entry => ({
+      ...entry,
+      transactionId: transaction.id,
+      transactionDate: transaction.date,
+      clientName: transaction.clientName || 'Cliente Ocasional',
+      clientPhone: transaction.clientPhone || '',
+      currentService: transaction.service || '',
+      currentPaymentMethod: transaction.paymentMethod || ''
+    })))
+    .sort((first, second) => new Date(second.editedAt) - new Date(first.editedAt)),
+
   deleteTransaction: (id) => {
     const transactions = storageService.getTransactions().filter(t => t.id !== id);
     saveSharedValue(STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS, transactions);
@@ -377,7 +389,7 @@ export const storageService = {
 
   // --- EXPENSES (EGRESOS) ---
   getExpenses: () => {
-    return readLocal(STORAGE_KEYS.EXPENSES, getInitialMockExpenses());
+    return readLocal(STORAGE_KEYS.EXPENSES, []);
   },
 
   addExpense: (expense) => {
@@ -614,6 +626,57 @@ export const storageService = {
       };
     });
 
+    const dailyBarberStats = [];
+    const dailyStatsMap = new Map();
+
+    for (const tx of allTxs) {
+      const key = `${tx.date}|${tx.barberId}`;
+      if (!dailyStatsMap.has(key)) {
+        dailyStatsMap.set(key, {
+          date: tx.date,
+          barberId: tx.barberId,
+          barberName: barbers.find(b => b.id === tx.barberId)?.name || 'Barbero',
+          clientesAtendidos: 0,
+          facturadoServicios: 0,
+          propinasRecibidas: 0,
+          adelantosRecibidos: 0
+        });
+      }
+
+      const bucket = dailyStatsMap.get(key);
+      bucket.clientesAtendidos += 1;
+      bucket.facturadoServicios += Number(tx.amount) || 0;
+      bucket.propinasRecibidas += Number(tx.tip) || 0;
+    }
+
+    for (const [key, entry] of dailyStatsMap.entries()) {
+      const [date, barberId] = key.split('|');
+      const barber = barbers.find(b => b.id === barberId);
+      const commissionRate = barber?.commissionRate || 0.40;
+      const comisionServicios = entry.facturadoServicios * commissionRate;
+      const adelantosRecibidos = allExs
+        .filter(e => e.category === 'adelanto' && e.date === date && (e.barberId === barberId || e.description.toLowerCase().includes((barber?.name || '').toLowerCase())))
+        .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+      const totalGananciaCalculada = comisionServicios + entry.propinasRecibidas;
+      const saldoNetoAPagarEfectivo = totalGananciaCalculada - adelantosRecibidos;
+
+      dailyBarberStats.push({
+        date,
+        barberId,
+        barberName: entry.barberName,
+        clientesAtendidos: entry.clientesAtendidos,
+        facturadoServicios: entry.facturadoServicios,
+        propinasRecibidas: entry.propinasRecibidas,
+        commissionRate,
+        comisionServicios,
+        totalGananciaCalculada,
+        adelantosRecibidos,
+        saldoNetoAPagarEfectivo
+      });
+    }
+
+    dailyBarberStats.sort((a, b) => a.date.localeCompare(b.date) || a.barberName.localeCompare(b.barberName));
+
     const totalClientesAtendidos = allTxs.length;
     const ticketPromedio = totalClientesAtendidos > 0 ? Math.round(totalServiciosMes / totalClientesAtendidos) : 0;
     
@@ -637,6 +700,7 @@ export const storageService = {
       saldoEsperadoBanco,
       saldoEfectivoCaja,
       barberStats,
+      dailyBarberStats,
       totalClientesAtendidos,
       ticketPromedio,
       gananciaBrutaBarberia,
@@ -647,46 +711,7 @@ export const storageService = {
   },
 
   getMonthlyFinancialReport: (yearMonthStr) => {
-    const currentMetrics = storageService.getRawMonthMetrics(yearMonthStr);
-
-    const [y, m] = yearMonthStr.split('-').map(Number);
-    let prevYear = y;
-    let prevMonth = m - 1;
-    if (prevMonth === 0) {
-      prevMonth = 12;
-      prevYear = y - 1;
-    }
-    const prevYearMonthStr = `${prevYear}-${prevMonth.toString().padStart(2, '0')}`;
-    const previousMetrics = storageService.getRawMonthMetrics(prevYearMonthStr);
-
-    const diffFacturado = currentMetrics.totalFacturadoMes - previousMetrics.totalFacturadoMes;
-    const pctGrowthFacturado = previousMetrics.totalFacturadoMes > 0 
-      ? Math.round((diffFacturado / previousMetrics.totalFacturadoMes) * 100) 
-      : 0;
-
-    const diffClientes = currentMetrics.totalClientesAtendidos - previousMetrics.totalClientesAtendidos;
-    const pctGrowthClientes = previousMetrics.totalClientesAtendidos > 0 
-      ? Math.round((diffClientes / previousMetrics.totalClientesAtendidos) * 100) 
-      : 0;
-
-    const diffGananciaNeta = currentMetrics.gananciaNetaBarberia - previousMetrics.gananciaNetaBarberia;
-    const pctGrowthGananciaNeta = previousMetrics.gananciaNetaBarberia > 0 
-      ? Math.round((diffGananciaNeta / previousMetrics.gananciaNetaBarberia) * 100) 
-      : 0;
-
-    return {
-      ...currentMetrics,
-      previousMonthStr: prevYearMonthStr,
-      previousMetrics,
-      comparison: {
-        pctGrowthFacturado,
-        diffFacturado,
-        pctGrowthClientes,
-        diffClientes,
-        pctGrowthGananciaNeta,
-        diffGananciaNeta
-      }
-    };
+    return storageService.getRawMonthMetrics(yearMonthStr);
   },
 
   exportJSONData: () => {
