@@ -7,7 +7,6 @@ const AUTH_KEY = 'barberflow_local_auth';
 
 export default function AuthGate() {
   const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem(AUTH_KEY) === 'true');
-  const [isDataReady, setIsDataReady] = useState(false);
 
   const handleLogin = () => {
     localStorage.setItem(AUTH_KEY, 'true');
@@ -20,21 +19,13 @@ export default function AuthGate() {
   };
 
   useEffect(() => {
-    if (!isLoggedIn) {
-      setIsDataReady(true);
-      return undefined;
-    }
+    if (!isLoggedIn) return undefined;
 
-    let mounted = true;
-    setIsDataReady(false);
-    storageService.initializeSharedData().finally(() => {
-      if (mounted) setIsDataReady(true);
+    void storageService.initializeSharedData().catch((error) => {
+      console.error('No se pudo sincronizar la información compartida:', error);
     });
-
-    return () => { mounted = false; };
   }, [isLoggedIn]);
 
   if (!isLoggedIn) return <AuthScreen onLogin={handleLogin} />;
-  if (!isDataReady) return null;
   return <App onSignOut={handleSignOut} />;
 }
