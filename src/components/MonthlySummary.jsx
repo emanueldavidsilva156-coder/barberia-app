@@ -5,15 +5,29 @@ import {
   CheckCircle, ArrowDownCircle, Users, Award, ShieldAlert, FileText, Gift, 
   Home, Shield, Wifi, Zap, Droplet, Edit3, Save 
 } from 'lucide-react';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title } from 'chart.js';
-import { Pie, Bar } from 'react-chartjs-2';
 
-ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title);
+let Pie = null;
+let Bar = null;
+let ChartJS = null;
+
+const loadCharting = async () => {
+  if (Pie && Bar && ChartJS) return;
+
+  const chartJsModule = await import('chart.js');
+  const chartjs2 = await import('react-chartjs-2');
+
+  ChartJS = chartJsModule.Chart;
+  ChartJS.register(chartJsModule.ArcElement, chartJsModule.Tooltip, chartJsModule.Legend, chartJsModule.CategoryScale, chartJsModule.LinearScale, chartJsModule.BarElement, chartJsModule.Title);
+
+  Pie = chartjs2.Pie;
+  Bar = chartjs2.Bar;
+};
 
 export default function MonthlySummary() {
   const currentMonthStr = new Date().toISOString().substring(0, 7); // "YYYY-MM"
   const [selectedMonth, setSelectedMonth] = useState(currentMonthStr);
   const [report, setReport] = useState(null);
+  const [chartsReady, setChartsReady] = useState(false);
 
   // Editable Bank Expenses local state
   const [isEditingBankExpenses, setIsEditingBankExpenses] = useState(false);
@@ -27,6 +41,7 @@ export default function MonthlySummary() {
 
   useEffect(() => {
     loadMonthlyReport();
+    void loadCharting().then(() => setChartsReady(true));
   }, [selectedMonth]);
 
   const loadMonthlyReport = () => {
@@ -432,18 +447,22 @@ export default function MonthlySummary() {
             Rendimiento por Barbero (Servicios vs Total Ganancia)
           </h3>
           <div style={{ height: '260px' }}>
-            <Bar 
-              data={barData} 
-              options={{ 
-                responsive: true, 
-                maintainAspectRatio: false,
-                plugins: { legend: { labels: { color: '#94a3b8' } } },
-                scales: {
-                  x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-                  y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } }
-                }
-              }} 
-            />
+            {chartsReady && Bar ? (
+              <Bar 
+                data={barData} 
+                options={{ 
+                  responsive: true, 
+                  maintainAspectRatio: false,
+                  plugins: { legend: { labels: { color: '#94a3b8' } } },
+                  scales: {
+                    x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                  }
+                }} 
+              />
+            ) : (
+              <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Cargando gráficos…</div>
+            )}
           </div>
         </div>
 
@@ -454,14 +473,18 @@ export default function MonthlySummary() {
             Distribución de Pagos (Efectivo vs Transferencia)
           </h3>
           <div style={{ height: '260px', display: 'flex', justifyContent: 'center' }}>
-            <Pie 
-              data={pieData} 
-              options={{ 
-                responsive: true, 
-                maintainAspectRatio: false,
-                plugins: { legend: { labels: { color: '#94a3b8' } } }
-              }} 
-            />
+            {chartsReady && Pie ? (
+              <Pie 
+                data={pieData} 
+                options={{ 
+                  responsive: true, 
+                  maintainAspectRatio: false,
+                  plugins: { legend: { labels: { color: '#94a3b8' } } }
+                }} 
+              />
+            ) : (
+              <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Cargando gráficos…</div>
+            )}
           </div>
         </div>
 

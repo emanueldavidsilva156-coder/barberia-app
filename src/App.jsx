@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense, lazy } from 'react';
 import Navbar from './components/Navbar';
-import DailyCashRegister from './components/DailyCashRegister';
-import CustomerDatabase from './components/CustomerDatabase';
-import MonthlySummary from './components/MonthlySummary';
-import SettingsModal from './components/SettingsModal';
 import { storageService } from './services/storageService';
+
+const DailyCashRegister = lazy(() => import('./components/DailyCashRegister'));
+const CustomerDatabase = lazy(() => import('./components/CustomerDatabase'));
+const MonthlySummary = lazy(() => import('./components/MonthlySummary'));
+const SettingsModal = lazy(() => import('./components/SettingsModal'));
 
 export default function App({ onSignOut }) {
   const [activeTab, setActiveTab] = useState('caja'); // 'caja' | 'clientes' | 'resumen'
@@ -26,16 +27,20 @@ export default function App({ onSignOut }) {
 
       {/* Main View Content */}
       <main className="main-content" style={{ flex: 1, padding: '10px 0' }}>
-        {activeTab === 'caja' && <DailyCashRegister />}
-        {activeTab === 'clientes' && <CustomerDatabase />}
-        {activeTab === 'resumen' && <MonthlySummary />}
+        <Suspense fallback={<div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>Cargando...</div>}>
+          {activeTab === 'caja' && <DailyCashRegister />}
+          {activeTab === 'clientes' && <CustomerDatabase />}
+          {activeTab === 'resumen' && <MonthlySummary />}
+        </Suspense>
       </main>
 
       {/* Modal Settings */}
-      <SettingsModal 
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-      />
+      <Suspense fallback={null}>
+        <SettingsModal 
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+        />
+      </Suspense>
 
       {/* Desktop Footer */}
       <footer style={{
