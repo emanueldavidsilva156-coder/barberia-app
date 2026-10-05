@@ -12,7 +12,9 @@ export default function SettingsModal({ isOpen, onClose }) {
 
   // Form states for Barber Add
   const [newBarberName, setNewBarberName] = useState('');
-  const [newBarberComm, setNewBarberComm] = useState('40');
+  const [newBarberComm, setNewBarberComm] = useState('50');
+  const [editingBarberId, setEditingBarberId] = useState(null);
+  const [editBarberCommission, setEditBarberCommission] = useState('50');
 
   // Form states for Catalog Add
   const [newItemName, setNewItemName] = useState('');
@@ -97,7 +99,22 @@ export default function SettingsModal({ isOpen, onClose }) {
 
     setBarbers(updated);
     setNewBarberName('');
-    setNewBarberComm('40');
+    setNewBarberComm('50');
+  };
+
+  const handleStartEditBarber = (barber) => {
+    setEditingBarberId(barber.id);
+    setEditBarberCommission(String((barber.commissionRate ?? 0.5) * 100));
+  };
+
+  const handleSaveBarberCommission = (barberId) => {
+    const commission = Number(editBarberCommission);
+    if (!Number.isFinite(commission) || commission < 0 || commission > 100) {
+      alert('La comisión debe estar entre 0% y 100%.');
+      return;
+    }
+    setBarbers(storageService.updateBarberCommission(barberId, commission));
+    setEditingBarberId(null);
   };
 
   const handleDeleteBarber = (id) => {
@@ -241,18 +258,49 @@ export default function SettingsModal({ isOpen, onClose }) {
                 {barbers.map(b => (
                   <div key={b.id} style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    flexWrap: 'wrap', gap: '12px',
                     padding: '12px 16px', background: 'rgba(15, 23, 42, 0.6)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)'
                   }}>
                     <div>
                       <span style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '1rem' }}>{b.name}</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                        Comisión Servicios: <strong style={{ color: '#34d399' }}>{((b.commissionRate || 0.40) * 100)}%</strong> + 100% Propinas
-                      </span>
-                      <button onClick={() => handleDeleteBarber(b.id)} className="btn btn-danger btn-sm">
-                        <Trash2 size={14} />
-                      </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                      {editingBarberId === b.id ? (
+                        <>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                            Comisión
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="1"
+                              value={editBarberCommission}
+                              onChange={(e) => setEditBarberCommission(e.target.value)}
+                              className="form-input"
+                              style={{ width: '90px', padding: '6px 8px' }}
+                            />
+                            %
+                          </label>
+                          <button onClick={() => handleSaveBarberCommission(b.id)} className="btn btn-primary btn-sm" title="Guardar comisión">
+                            <Save size={14} />
+                          </button>
+                          <button onClick={() => setEditingBarberId(null)} className="btn btn-secondary btn-sm" title="Cancelar edición">
+                            Cancelar
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                            Comisión Servicios: <strong style={{ color: '#34d399' }}>{((b.commissionRate ?? 0.5) * 100)}%</strong> + 100% Propinas
+                          </span>
+                          <button onClick={() => handleStartEditBarber(b)} className="btn btn-secondary btn-sm" title="Modificar porcentaje de comisión">
+                            <Edit3 size={14} /> Modificar %
+                          </button>
+                          <button onClick={() => handleDeleteBarber(b.id)} className="btn btn-danger btn-sm" title="Eliminar barbero">
+                            <Trash2 size={14} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -274,7 +322,10 @@ export default function SettingsModal({ isOpen, onClose }) {
                   />
                   <input 
                     type="number"
-                    placeholder="Comisión % (ej. 40)"
+                    placeholder="Comisión % (ej. 50)"
+                    min="0"
+                    max="100"
+                    step="1"
                     value={newBarberComm}
                     onChange={(e) => setNewBarberComm(e.target.value)}
                     className="form-input"

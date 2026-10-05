@@ -15,7 +15,8 @@ const CLOUD_KEYS = {
   BARBERS: 'barbers',
   SERVICES: 'services',
   FIXED_EXPENSES: 'fixed_expenses',
-  BANK_EXPENSES_OVERRIDE: 'bank_expenses_override'
+  BANK_EXPENSES_OVERRIDE: 'bank_expenses_override',
+  COMMISSION_MIGRATION: 'commission_migration_50_v1'
 };
 
 const STORAGE_KEYS = {
@@ -31,11 +32,13 @@ const STORAGE_KEYS = {
 };
 
 const OPERATIONAL_DATA_RESET_KEY = 'barberflow_operational_data_reset_v2';
+const COMMISSION_MIGRATION_LOCAL_KEY = 'barberflow_commission_migration_50_v1';
+const DEFAULT_COMMISSION_RATE = 0.5;
 
 const DEFAULT_BARBERS = [
-  { id: 'ema', name: 'Ema', commissionRate: 0.40, phone: '', active: true },
-  { id: 'diego', name: 'Diego', commissionRate: 0.40, phone: '', active: true },
-  { id: 'barbero_invitado', name: 'Barbero 3', commissionRate: 0.40, phone: '', active: true }
+  { id: 'ema', name: 'Ema', commissionRate: DEFAULT_COMMISSION_RATE, phone: '', active: true },
+  { id: 'diego', name: 'Diego', commissionRate: DEFAULT_COMMISSION_RATE, phone: '', active: true },
+  { id: 'barbero_invitado', name: 'Barbero 3', commissionRate: DEFAULT_COMMISSION_RATE, phone: '', active: true }
 ];
 
 const DEFAULT_SERVICES = [
@@ -145,7 +148,17 @@ export const storageService = {
       localStorage.setItem(OPERATIONAL_DATA_RESET_KEY, '1');
     }
 
-    if (!supabase) return;
+    if (!supabase) {
+      if (localStorage.getItem(COMMISSION_MIGRATION_LOCAL_KEY) !== '1') {
+        const updatedBarbers = storageService.getBarbers().map(barber => ({
+          ...barber,
+          commissionRate: DEFAULT_COMMISSION_RATE
+        }));
+        writeLocal(STORAGE_KEYS.BARBERS, updatedBarbers);
+        localStorage.setItem(COMMISSION_MIGRATION_LOCAL_KEY, '1');
+      }
+      return;
+    }
 
     const sharedCollections = [
       [STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS, []],
@@ -166,6 +179,17 @@ export const storageService = {
       const localValue = readLocal(localKey, defaultValue);
       writeLocal(localKey, localValue);
       await writeCloudValue(cloudKey, localValue);
+    }
+
+    const commissionMigration = await readCloudValue(CLOUD_KEYS.COMMISSION_MIGRATION);
+    if (commissionMigration !== 'complete') {
+      const updatedBarbers = storageService.getBarbers().map(barber => ({
+        ...barber,
+        commissionRate: DEFAULT_COMMISSION_RATE
+      }));
+      writeLocal(STORAGE_KEYS.BARBERS, updatedBarbers);
+      await writeCloudValue(CLOUD_KEYS.BARBERS, updatedBarbers);
+      await writeCloudValue(CLOUD_KEYS.COMMISSION_MIGRATION, 'complete');
     }
 
     const customers = await storageService.getCustomersShared();
@@ -252,12 +276,25 @@ export const storageService = {
     saveSharedValue(STORAGE_KEYS.BARBERS, CLOUD_KEYS.BARBERS, barbers);
   },
 
+  updateBarberCommission: (id, commissionPercent) => {
+    const barbers = storageService.getBarbers().map(barber => (
+      barber.id === id
+        ? { ...barber, commissionRate: Number(commissionPercent) / 100 }
+        : barber
+    ));
+    storageService.saveBarbers(barbers);
+    return barbers;
+  },
+
   addBarber: ({ name, commissionRate }) => {
     const barbers = storageService.getBarbers();
+    const commission = Number(commissionRate);
     const newBarber = {
       id: 'barber_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
       name: name.trim(),
-      commissionRate: Number(commissionRate) / 100 || 0.40,
+      commissionRate: Number.isFinite(commission) && commission >= 0 && commission <= 100
+        ? commission / 100
+        : DEFAULT_COMMISSION_RATE,
       phone: '',
       active: true
     };
@@ -602,7 +639,7 @@ export const storageService = {
       const facturadoServicios = barberTxs.reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
       const propinasRecibidas = barberTxs.reduce((acc, t) => acc + (Number(t.tip) || 0), 0);
 
-      const commissionRate = barber.commissionRate || 0.40;
+      const commissionRate = barber.commissionRate ?? DEFAULT_COMMISSION_RATE;
       const comisionServicios = facturadoServicios * commissionRate;
       const totalGananciaCalculada = comisionServicios + propinasRecibidas;
 
@@ -652,7 +689,7 @@ export const storageService = {
     for (const [key, entry] of dailyStatsMap.entries()) {
       const [date, barberId] = key.split('|');
       const barber = barbers.find(b => b.id === barberId);
-      const commissionRate = barber?.commissionRate || 0.40;
+      const commissionRate = barber?.commissionRate ?? DEFAULT_COMMISSION_RATE;
       const comisionServicios = entry.facturadoServicios * commissionRate;
       const adelantosRecibidos = allExs
         .filter(e => e.category === 'adelanto' && e.date === date && (e.barberId === barberId || e.description.toLowerCase().includes((barber?.name || '').toLowerCase())))
@@ -680,7 +717,10 @@ export const storageService = {
     const totalClientesAtendidos = allTxs.length;
     const ticketPromedio = totalClientesAtendidos > 0 ? Math.round(totalServiciosMes / totalClientesAtendidos) : 0;
     
-    const gananciaBrutaBarberia = totalServiciosMes * 0.60;
+    const gananciaBrutaBarberia = totalServiciosMes - barberStats.reduce(
+      (total, barber) => total + barber.comisionServicios,
+      0
+    );
     const gananciaNetaBarberia = gananciaBrutaBarberia - totalEgresosOperativosGlobales;
 
     return {

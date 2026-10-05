@@ -124,7 +124,7 @@ export default function MonthlySummary() {
         borderRadius: 6
       },
       {
-        label: 'Ganancia Barbero (40% + Propinas)',
+        label: 'Ganancia Barbero (Comisión + Propinas)',
         data: report.barberStats.map(b => b.totalGananciaCalculada),
         backgroundColor: 'rgba(16, 185, 129, 0.7)',
         borderColor: '#10b981',
@@ -389,7 +389,7 @@ export default function MonthlySummary() {
               Liquidación de Sueldos & Comisiones por Día
             </h3>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Se muestran los cortes y la comisión del 40% por fecha, no el acumulado mensual.
+              Se muestran los cortes y la comisión configurada por fecha, no el acumulado mensual.
             </p>
           </div>
           <span className="badge badge-gold">Comisión de cada día</span>
@@ -404,7 +404,7 @@ export default function MonthlySummary() {
                   <th>Barbero</th>
                   <th>Cortes</th>
                   <th>Facturación</th>
-                  <th>Comisión 40%</th>
+                  <th>Comisión</th>
                   <th>Propinas</th>
                   <th>Ganancia Total</th>
                   <th>Adelantos</th>
