@@ -28,7 +28,7 @@ export default function App({ onSignOut }) {
       {/* Main View Content */}
       <main className="main-content" style={{ flex: 1, padding: '10px 0' }}>
         <Suspense fallback={<div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>Cargando...</div>}>
-          {activeTab === 'caja' && <DailyCashRegister />}
+          {activeTab === 'caja' && <DailyCashRegister isAdmin={userRole === 'admin'} />}
           {activeTab === 'clientes' && <CustomerDatabase />}
           {activeTab === 'resumen' && <MonthlySummary />}
         </Suspense>

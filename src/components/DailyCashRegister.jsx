@@ -5,7 +5,7 @@ import {
   Trash2, Phone, Scissors, ArrowDownCircle, ArrowUpCircle, CheckCircle2, Gift, Edit2, ShoppingBag, Cake, Search, MessageSquare, Sparkles 
 } from 'lucide-react';
 
-export default function DailyCashRegister() {
+export default function DailyCashRegister({ isAdmin = false }) {
   const todayStr = new Date().toISOString().split('T')[0];
   const [selectedDate, setSelectedDate] = useState(todayStr);
 
@@ -47,7 +47,6 @@ export default function DailyCashRegister() {
   const [editService, setEditService] = useState('');
   const [editPaymentMethod, setEditPaymentMethod] = useState('transferencia');
   const [editBarberId, setEditBarberId] = useState('');
-  const [editedBy, setEditedBy] = useState('');
   const [editReason, setEditReason] = useState('');
 
   useEffect(() => {
@@ -190,20 +189,20 @@ export default function DailyCashRegister() {
   };
 
   const handleOpenEditModal = (tx) => {
+    if (!isAdmin) return;
     setEditingTx(tx);
     setEditAmount(tx.amount || 0);
     setEditTip(tx.tip || 0);
     setEditService(tx.service || '');
     setEditPaymentMethod(tx.paymentMethod || 'transferencia');
     setEditBarberId(tx.barberId || (barbers[0] ? barbers[0].id : ''));
-    setEditedBy('');
     setEditReason('');
   };
 
   const handleSaveEdit = (e) => {
     e.preventDefault();
-    if (!editedBy.trim()) {
-      alert('Por favor decinos quién realiza la modificación.');
+    if (!isAdmin) {
+      alert('Solo Ema puede modificar movimientos.');
       return;
     }
     if (!editReason.trim()) {
@@ -225,7 +224,7 @@ export default function DailyCashRegister() {
         barberId: editBarberId
       },
       {
-        editedBy: editedBy.trim(),
+        editedBy: 'Ema',
         editReason: editReason.trim()
       }
     );
@@ -235,6 +234,10 @@ export default function DailyCashRegister() {
   };
 
   const handleDeleteTx = (id) => {
+    if (!isAdmin) {
+      alert('Solo Ema puede eliminar movimientos.');
+      return;
+    }
     if (window.confirm('¿Eliminar este registro de venta?')) {
       storageService.deleteTransaction(id);
       loadData();
@@ -242,6 +245,10 @@ export default function DailyCashRegister() {
   };
 
   const handleDeleteEx = (id) => {
+    if (!isAdmin) {
+      alert('Solo Ema puede eliminar movimientos.');
+      return;
+    }
     if (window.confirm('¿Eliminar este egreso?')) {
       storageService.deleteExpense(id);
       loadData();
@@ -647,7 +654,7 @@ export default function DailyCashRegister() {
                         <th>Item</th>
                         <th>Propina</th>
                         <th>Total</th>
-                        <th>Acción</th>
+                        {isAdmin && <th>Acción</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -703,26 +710,28 @@ export default function DailyCashRegister() {
                                 {tx.paymentMethod === 'contado' ? 'Efectivo' : 'Transf.'}
                               </div>
                             </td>
-                            <td>
-                              <div style={{ display: 'flex', gap: '6px' }}>
-                                <button 
-                                  onClick={() => handleOpenEditModal(tx)}
-                                  className="btn btn-outline btn-sm"
-                                  style={{ borderColor: 'var(--accent-gold)', color: 'var(--accent-gold)', padding: '6px' }}
-                                  title="Editar registro de venta"
-                                >
-                                  <Edit2 size={14} />
-                                </button>
-                                <button 
-                                  onClick={() => handleDeleteTx(tx.id)}
-                                  className="btn btn-danger btn-sm"
-                                  style={{ padding: '6px' }}
-                                  title="Eliminar"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </td>
+                            {isAdmin && (
+                              <td>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                  <button
+                                    onClick={() => handleOpenEditModal(tx)}
+                                    className="btn btn-outline btn-sm"
+                                    style={{ borderColor: 'var(--accent-gold)', color: 'var(--accent-gold)', padding: '6px' }}
+                                    title="Editar registro de venta"
+                                  >
+                                    <Edit2 size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteTx(tx.id)}
+                                    className="btn btn-danger btn-sm"
+                                    style={{ padding: '6px' }}
+                                    title="Eliminar"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
@@ -848,7 +857,7 @@ export default function DailyCashRegister() {
                         <th>Concepto</th>
                         <th>Origen</th>
                         <th>Monto</th>
-                        <th>Acción</th>
+                        {isAdmin && <th>Acción</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -868,15 +877,17 @@ export default function DailyCashRegister() {
                           <td style={{ fontWeight: 700, color: '#f43f5e' }}>
                             -${Number(ex.amount).toLocaleString('es-AR')}
                           </td>
-                          <td>
-                            <button 
-                              onClick={() => handleDeleteEx(ex.id)}
-                              className="btn btn-danger btn-sm"
-                              title="Eliminar"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </td>
+                          {isAdmin && (
+                            <td>
+                              <button
+                                onClick={() => handleDeleteEx(ex.id)}
+                                className="btn btn-danger btn-sm"
+                                title="Eliminar"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -915,7 +926,7 @@ export default function DailyCashRegister() {
               Editar Movimiento de Venta ({editingTx.clientName})
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '18px' }}>
-              Modificá el monto o servicio registrado. Se guardará quién realizó el cambio y el motivo.
+              Modificá el movimiento. Se guardará que Ema realizó el cambio y el motivo.
             </p>
 
             <form onSubmit={handleSaveEdit}>
@@ -989,16 +1000,8 @@ export default function DailyCashRegister() {
                   <Sparkles size={16} /> Registro de Auditoría (Obligatorio)
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label" style={{ color: 'var(--text-main)' }}>¿Quién realiza la edición?</label>
-                  <input 
-                    type="text"
-                    placeholder="ej. Ema, Diego, Barbero"
-                    value={editedBy}
-                    onChange={(e) => setEditedBy(e.target.value)}
-                    className="form-input"
-                    required
-                  />
+                <div style={{ color: 'var(--text-main)', fontSize: '0.88rem', marginBottom: '12px' }}>
+                  Edita: <strong style={{ color: 'var(--accent-gold)' }}>Ema</strong>
                 </div>
 
                 <div className="form-group" style={{ marginBottom: 0 }}>

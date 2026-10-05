@@ -246,7 +246,7 @@ export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole,
               </div>
               <h3 style={{ fontSize: '1.25rem', color: 'var(--text-main)' }}>Acceso Restringido</h3>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Ingresá la clave PIN de Administrador (Ema) para ver la contabilidad y ajustes
+                Ingresá el PIN de Ema para corregir o eliminar movimientos, ver la contabilidad y abrir ajustes
               </p>
             </div>
 
@@ -254,7 +254,7 @@ export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole,
               <div className="form-group" style={{ marginBottom: '20px' }}>
                 <input 
                   type="password"
-                  placeholder="PIN (ej. 1234)"
+                  placeholder="PIN de Ema"
                   value={inputPin}
                   onChange={(e) => setInputPin(e.target.value)}
                   className="form-input"
@@ -293,10 +293,6 @@ export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole,
                 </button>
               </div>
             </form>
-
-            <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-dark)' }}>
-              PIN por defecto: <code>1234</code> (Editable en Ajustes)
-            </div>
 
           </div>
         </div>

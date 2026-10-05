@@ -416,7 +416,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                 Clave PIN para Administrador (Modo Ema)
               </h4>
               <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
-                Esta clave evita que los barberos o personas no autorizadas puedan acceder al resumen contable mensual, conciliación bancaria y edición de precios.
+                El PIN habilita desde la app el resumen, los ajustes y la edición o eliminación de movimientos de caja. El PIN inicial es 1234: cambialo por uno que solo conozcas vos antes de compartir la app con los barberos.
               </p>
 
               <form onSubmit={handleSavePin} style={{ maxWidth: '400px', background: 'rgba(15, 23, 42, 0.6)', padding: '20px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
