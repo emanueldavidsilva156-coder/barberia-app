@@ -26,6 +26,8 @@ export default function SettingsModal({ isOpen, onClose }) {
   const [catalogFilter, setCatalogFilter] = useState('todos');
   const [importStatus, setImportStatus] = useState('');
   const [backupStatus, setBackupStatus] = useState('');
+  const [historyStatus, setHistoryStatus] = useState('');
+  const [dataHistory, setDataHistory] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
 
   useEffect(() => {
@@ -33,6 +35,21 @@ export default function SettingsModal({ isOpen, onClose }) {
       loadData();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'seguridad') return undefined;
+    let active = true;
+    storageService.getAppDataHistory()
+      .then(history => {
+        if (active) setDataHistory(history);
+      })
+      .catch(error => {
+        if (active) setHistoryStatus(`No se pudo cargar el historial: ${error.message}`);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isOpen, activeTab]);
 
   const loadData = () => {
     setBarbers(storageService.getBarbers());
@@ -118,17 +135,25 @@ export default function SettingsModal({ isOpen, onClose }) {
     }
   };
 
-  const handleExportData = () => {
-    const jsonStr = storageService.exportJSONData();
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `backup_barberia_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
+  const handleExportData = async () => {
+    setBackupStatus('Preparando backup actualizado desde Supabase…');
+    try {
+      const jsonStr = await storageService.exportJSONData();
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `backup_barberia_${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setBackupStatus('Backup descargado desde Supabase. Guardalo en un lugar privado.');
+    } catch (error) {
+      setBackupStatus(`No se pudo descargar el backup: ${error.message}`);
+    }
   };
 
   const handleRestoreSafeBackup = async () => {
+    if (!window.confirm('Esto reemplazará los datos actuales con el backup local. ¿Querés continuar?')) return;
     const restored = storageService.restoreLastKnownBackup();
     if (restored) {
       try {
@@ -145,15 +170,32 @@ export default function SettingsModal({ isOpen, onClose }) {
     setTimeout(() => setBackupStatus(''), 3000);
   };
 
+  const handleRestoreHistory = async (historyId) => {
+    if (!window.confirm('Se reemplazará la colección actual por esta versión anterior. ¿Querés continuar?')) return;
+    setHistoryStatus('Restaurando versión…');
+    try {
+      await storageService.restoreAppDataHistory(historyId);
+      loadData();
+      setDataHistory(await storageService.getAppDataHistory());
+      setHistoryStatus('Versión restaurada. El estado que se reemplazó también quedó archivado.');
+    } catch (error) {
+      setHistoryStatus(`No se pudo restaurar la versión: ${error.message}`);
+    }
+  };
+
   const handleImportFile = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (!window.confirm('Importar este archivo reemplazará los datos actuales. Descargá primero una copia actualizada. ¿Querés continuar?')) {
+      e.target.value = '';
+      return;
+    }
 
     const reader = new FileReader();
-    reader.onload = async (evt) => {
-      const content = evt.target.result;
-      const success = storageService.importJSONData(content);
-      if (success) {
+    reader.onload = async () => {
+      const content = reader.result;
+      try {
+        storageService.importJSONData(content);
         try {
           await storageService.syncPendingChanges();
           setImportStatus('¡Datos importados y sincronizados!');
@@ -162,9 +204,12 @@ export default function SettingsModal({ isOpen, onClose }) {
         } catch {
           setImportStatus('Los datos quedaron en este dispositivo, pero no se pudieron sincronizar. Revisá la conexión e intentá nuevamente.');
         }
-      } else {
-        alert('Error al leer el archivo de copia de seguridad.');
+      } catch (error) {
+        setImportStatus(`No se pudo importar el backup: ${error.message}`);
       }
+    };
+    reader.onerror = () => {
+      setImportStatus('No se pudo leer el archivo seleccionado.');
     };
     reader.readAsText(file);
   };
@@ -479,7 +524,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                 Accesos protegidos y copias de seguridad
               </h4>
               <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
-                Los permisos de administración los define Supabase para cada cuenta; ningún PIN guardado en este navegador puede elevar los permisos. Descargá una copia JSON periódicamente y mantené habilitados los backups de la base.
+                Los permisos de administración los define Supabase para cada cuenta; ningún PIN guardado en este navegador puede elevar los permisos. Los cambios destructivos se guardan en el historial de la base. Descargá una copia JSON actualizada periódicamente: el historial y los backups del proveedor no reemplazan una copia externa.
               </p>
 
               <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '420px' }}>
@@ -495,6 +540,30 @@ export default function SettingsModal({ isOpen, onClose }) {
                 </label>
                 {backupStatus && <div style={{ fontSize: '0.82rem', color: '#fbbf24', textAlign: 'center' }}>{backupStatus}</div>}
                 {importStatus && <div style={{ fontSize: '0.82rem', color: '#fbbf24', textAlign: 'center' }}>{importStatus}</div>}
+              </div>
+
+              <div style={{ marginTop: '28px' }}>
+                <h5 style={{ color: 'var(--text-main)', marginBottom: '8px' }}>Versiones anteriores recuperables</h5>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                  Se archivan las versiones previas cuando se modifican o eliminan datos. Restaurar una versión también archiva el estado actual.
+                </p>
+                {historyStatus && <p role="status" style={{ fontSize: '0.82rem', color: '#fbbf24', marginBottom: '10px' }}>{historyStatus}</p>}
+                {dataHistory.length === 0 ? (
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Todavía no hay versiones archivadas.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {dataHistory.map(version => (
+                      <div key={version.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '10px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)' }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                          {version.data_key} · {new Date(version.archived_at).toLocaleString('es-AR')}
+                        </span>
+                        <button className="btn btn-secondary btn-sm" onClick={() => handleRestoreHistory(version.id)}>
+                          Restaurar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

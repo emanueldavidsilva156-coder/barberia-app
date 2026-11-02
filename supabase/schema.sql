@@ -179,27 +179,48 @@ BEGIN
   IF p_key IS NULL OR NOT (p_key = ANY(allowed_keys)) OR p_value IS NULL THEN
     RAISE EXCEPTION 'Clave o valor no permitido';
   END IF;
+  IF (p_key IN ('transactions', 'expenses', 'customers', 'barbers', 'services')
+      AND jsonb_typeof(p_value) <> 'array')
+     OR (p_key IN ('fixed_expenses', 'bank_expenses_override')
+      AND jsonb_typeof(p_value) <> 'object')
+     OR (p_key = 'commission_migration_50_v1'
+      AND jsonb_typeof(p_value) <> 'string') THEN
+    RAISE EXCEPTION 'El formato de los datos no es válido';
+  END IF;
 
   SELECT data INTO old_value
   FROM public.barberflow_app_data
   WHERE key = p_key
   FOR UPDATE;
 
-  IF FOUND THEN
-    IF p_key IN ('transactions', 'expenses', 'customers')
+  IF FOUND AND old_value IS DISTINCT FROM p_value THEN
+    IF p_key IN ('transactions', 'expenses')
        AND jsonb_typeof(old_value) = 'array'
        AND jsonb_typeof(p_value) = 'array' THEN
-      should_archive := jsonb_array_length(p_value) < jsonb_array_length(old_value)
-        OR EXISTS (
+      should_archive := EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(old_value) AS old_entry(item)
+        WHERE NOT EXISTS (
           SELECT 1
-          FROM jsonb_array_elements(old_value) AS old_entry(item)
-          WHERE NOT EXISTS (
-            SELECT 1
-            FROM jsonb_array_elements(p_value) AS new_entry(item)
-            WHERE new_entry.item->>'id' = old_entry.item->>'id'
-          )
-        );
-    ELSIF p_key IN ('transactions', 'expenses', 'customers') THEN
+          FROM jsonb_array_elements(p_value) AS new_entry(item)
+          WHERE new_entry.item = old_entry.item
+        )
+      );
+    ELSIF p_key = 'customers'
+       AND jsonb_typeof(old_value) = 'array'
+       AND jsonb_typeof(p_value) = 'array' THEN
+      should_archive := EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(old_value) AS old_entry(item)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(p_value) AS new_entry(item)
+          WHERE new_entry.item->>'id' = old_entry.item->>'id'
+            AND (new_entry.item - ARRAY['totalSpent', 'visitCount', 'monthlyVisitsCount', 'lastVisit', 'servicesHistory'])
+              = (old_entry.item - ARRAY['totalSpent', 'visitCount', 'monthlyVisitsCount', 'lastVisit', 'servicesHistory'])
+        )
+      );
+    ELSE
       should_archive := true;
     END IF;
     IF should_archive THEN
@@ -349,14 +370,85 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.admin_get_app_data_history()
+RETURNS TABLE(id BIGINT, data_key TEXT, archived_at TIMESTAMPTZ)
+LANGUAGE PLPGSQL
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.barberflow_user_roles
+    WHERE user_id = auth.uid() AND role = 'admin'
+  ) THEN
+    RAISE EXCEPTION 'No autorizado';
+  END IF;
+
+  RETURN QUERY
+  SELECT history.id, history.data_key, history.archived_at
+  FROM public.barberflow_app_data_history AS history
+  ORDER BY history.archived_at DESC
+  LIMIT 100;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_restore_app_data_history(p_history_id BIGINT)
+RETURNS VOID
+LANGUAGE PLPGSQL
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  archived_key TEXT;
+  archived_data JSONB;
+  current_data JSONB;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.barberflow_user_roles
+    WHERE user_id = auth.uid() AND role = 'admin'
+  ) THEN
+    RAISE EXCEPTION 'No autorizado';
+  END IF;
+
+  SELECT data_key, data
+  INTO archived_key, archived_data
+  FROM public.barberflow_app_data_history
+  WHERE id = p_history_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No se encontró la versión solicitada';
+  END IF;
+
+  SELECT data INTO current_data
+  FROM public.barberflow_app_data
+  WHERE key = archived_key
+  FOR UPDATE;
+
+  IF FOUND AND current_data IS DISTINCT FROM archived_data THEN
+    INSERT INTO public.barberflow_app_data_history (data_key, data, changed_by)
+    VALUES (archived_key, current_data, auth.uid());
+  END IF;
+
+  INSERT INTO public.barberflow_app_data (key, data, updated_at)
+  VALUES (archived_key, archived_data, now())
+  ON CONFLICT (key)
+  DO UPDATE SET data = EXCLUDED.data, updated_at = now();
+END;
+$$;
+
 REVOKE ALL ON FUNCTION public.get_my_role() FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.admin_get_app_data() FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.staff_get_app_data() FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.admin_save_app_data(TEXT, JSONB) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.staff_append_entry(TEXT, JSONB) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.admin_get_app_data_history() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.admin_restore_app_data_history(BIGINT) FROM PUBLIC, anon;
 
 GRANT EXECUTE ON FUNCTION public.get_my_role() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_get_app_data() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.staff_get_app_data() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_save_app_data(TEXT, JSONB) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.staff_append_entry(TEXT, JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_get_app_data_history() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_restore_app_data_history(BIGINT) TO authenticated;

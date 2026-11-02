@@ -111,12 +111,12 @@ const syncPendingValues = async () => {
   if (!supabase) return;
   if (syncPromise) return syncPromise;
 
+  emitSyncStatus('syncing');
   syncPromise = (async () => {
     while (true) {
       const pending = readLocal(PENDING_SYNC_KEY, []);
       if (!Array.isArray(pending)) {
-        writeLocal(PENDING_SYNC_KEY, []);
-        break;
+        throw new Error('La cola de cambios pendientes está dañada. No se borró; exportá los datos locales antes de continuar.');
       }
       const operation = pending.find(item => item.userId === currentUserId);
       if (!operation) break;
@@ -140,8 +140,8 @@ const syncPendingValues = async () => {
   return syncPromise;
 };
 
-const saveSharedValue = (localKey, cloudKey, value) => {
-  persistSafeBackup();
+const saveSharedValue = (localKey, cloudKey, value, createBackup = true) => {
+  if (createBackup) persistSafeBackup();
   const previous = readLocal(localKey, Array.isArray(value) ? [] : {});
   writeLocal(localKey, value);
   if (!supabase) return;
@@ -282,6 +282,16 @@ export const storageService = {
   },
 
   syncPendingChanges: () => syncPendingValues(),
+  getAppDataHistory: async () => {
+    if (currentUserRole !== 'admin') throw new Error('Solo una administradora puede ver el historial.');
+    return getSupabaseData('admin_get_app_data_history');
+  },
+  restoreAppDataHistory: async (historyId) => {
+    if (currentUserRole !== 'admin') throw new Error('Solo una administradora puede restaurar versiones.');
+    await syncPendingValues();
+    await getSupabaseData('admin_restore_app_data_history', { p_history_id: historyId });
+    await storageService.initializeSharedData();
+  },
   setAuthenticatedUser: (role, userId) => {
     currentUserRole = role;
     currentUserId = userId;
@@ -360,7 +370,9 @@ export const storageService = {
       const remoteValue = remoteValues[cloudKey];
       let value = hasRemoteValue ? remoteValue : localValue;
 
-      const pendingValue = pending.find(item => item.userId === currentUserId && item.key === cloudKey);
+      const pendingValue = pending
+        .filter(item => item.userId === currentUserId && item.key === cloudKey)
+        .at(-1);
       if (pendingValue) {
         value = pendingValue.value;
       } else if (hasRemoteValue && hasMeaningfulData(localValue) && !hasMeaningfulData(remoteValue)) {
@@ -373,8 +385,6 @@ export const storageService = {
 
       writeLocal(localKey, value);
     }
-    writeLocal(PENDING_SYNC_KEY, pending);
-
     writeLocal(PENDING_SYNC_KEY, pending);
     const commissionMigration = remoteValues?.[CLOUD_KEYS.COMMISSION_MIGRATION];
     if (commissionMigration !== 'complete') {
@@ -924,38 +934,66 @@ export const storageService = {
     }
   },
 
-  exportJSONData: () => {
+  exportJSONData: async () => {
+    if (!supabase || currentUserRole !== 'admin' || !currentUserId) {
+      throw new Error('Iniciá sesión como administradora y conectate a Supabase para descargar una copia actualizada.');
+    }
+
+    await syncPendingValues();
+    const data = await getSupabaseData('admin_get_app_data');
+    const requiredArrays = ['transactions', 'expenses', 'customers', 'barbers', 'services'];
+    if (!data || requiredArrays.some(field => !Array.isArray(data[field]))
+      || !data.fixed_expenses || typeof data.fixed_expenses !== 'object' || Array.isArray(data.fixed_expenses)
+      || !data.bank_expenses_override || typeof data.bank_expenses_override !== 'object' || Array.isArray(data.bank_expenses_override)) {
+      throw new Error('Supabase devolvió datos incompletos. No se descargó una copia parcial.');
+    }
+
     return JSON.stringify({
-      transactions: storageService.getTransactions(),
-      expenses: storageService.getExpenses(),
-      customers: storageService.getCustomers(),
-      barbers: storageService.getBarbers(),
-      services: storageService.getServices(),
-      fixedExpenses: storageService.getFixedExpenses(),
-      bankExpensesOverride: readLocal(STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, {}),
+      transactions: data.transactions,
+      expenses: data.expenses,
+      customers: data.customers,
+      barbers: data.barbers,
+      services: data.services,
+      fixedExpenses: data.fixed_expenses,
+      bankExpensesOverride: data.bank_expenses_override,
       exportDate: new Date().toISOString()
     }, null, 2);
   },
 
   importJSONData: (jsonString) => {
-    try {
-      const parsed = JSON.parse(jsonString);
-      const imports = [
-        ['transactions', STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS],
-        ['expenses', STORAGE_KEYS.EXPENSES, CLOUD_KEYS.EXPENSES],
-        ['customers', STORAGE_KEYS.CUSTOMERS, CLOUD_KEYS.CUSTOMERS],
-        ['barbers', STORAGE_KEYS.BARBERS, CLOUD_KEYS.BARBERS],
-        ['services', STORAGE_KEYS.SERVICES, CLOUD_KEYS.SERVICES],
-        ['fixedExpenses', STORAGE_KEYS.FIXED_EXPENSES, CLOUD_KEYS.FIXED_EXPENSES],
-        ['bankExpensesOverride', STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, CLOUD_KEYS.BANK_EXPENSES_OVERRIDE]
-      ];
-      for (const [field, localKey, cloudKey] of imports) {
-        if (parsed[field] !== undefined) saveSharedValue(localKey, cloudKey, parsed[field]);
-      }
-      return true;
-    } catch (e) {
-      console.error('Error importing JSON data:', e);
-      return false;
+    const parsed = JSON.parse(jsonString);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('El archivo no contiene un backup JSON válido.');
     }
+    const requiredArrays = ['transactions', 'expenses', 'customers', 'barbers', 'services'];
+    if (requiredArrays.some(field => !Array.isArray(parsed[field]))) {
+      throw new Error('El backup está incompleto o tiene colecciones con formato inválido.');
+    }
+    if (requiredArrays.some(field => parsed[field].some(item => (
+      !item || typeof item !== 'object' || Array.isArray(item)
+    )))) {
+      throw new Error('El backup contiene registros con formato inválido.');
+    }
+    if (!parsed.fixedExpenses || typeof parsed.fixedExpenses !== 'object' || Array.isArray(parsed.fixedExpenses)
+      || !parsed.bankExpensesOverride || typeof parsed.bankExpensesOverride !== 'object' || Array.isArray(parsed.bankExpensesOverride)) {
+      throw new Error('El backup está incompleto o tiene configuraciones con formato inválido.');
+    }
+    if (supabase && (currentUserRole !== 'admin' || !currentUserId)) {
+      throw new Error('Solo una sesión administradora puede importar datos.');
+    }
+    persistSafeBackup();
+    const imports = [
+      ['transactions', STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS],
+      ['expenses', STORAGE_KEYS.EXPENSES, CLOUD_KEYS.EXPENSES],
+      ['customers', STORAGE_KEYS.CUSTOMERS, CLOUD_KEYS.CUSTOMERS],
+      ['barbers', STORAGE_KEYS.BARBERS, CLOUD_KEYS.BARBERS],
+      ['services', STORAGE_KEYS.SERVICES, CLOUD_KEYS.SERVICES],
+      ['fixedExpenses', STORAGE_KEYS.FIXED_EXPENSES, CLOUD_KEYS.FIXED_EXPENSES],
+      ['bankExpensesOverride', STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, CLOUD_KEYS.BANK_EXPENSES_OVERRIDE]
+    ];
+    for (const [field, localKey, cloudKey] of imports) {
+      saveSharedValue(localKey, cloudKey, parsed[field], false);
+    }
+    return true;
   }
 };

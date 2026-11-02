@@ -51,3 +51,47 @@ test('save operations back up existing transactions before changing them', () =>
     existingTransactions
   );
 });
+
+test('import rejects an incomplete backup without changing existing data', () => {
+  global.localStorage = makeLocalStorage();
+  const existingTransactions = [{ id: 'tx-1', amount: 1500, date: '2026-10-12' }];
+  global.localStorage.setItem('barberflow_transactions_v1', JSON.stringify(existingTransactions));
+
+  assert.throws(
+    () => storageService.importJSONData(JSON.stringify({ transactions: [] })),
+    /backup está incompleto/
+  );
+  assert.deepEqual(JSON.parse(global.localStorage.getItem('barberflow_transactions_v1')), existingTransactions);
+});
+
+test('import preserves existing operational data before replacing it', () => {
+  global.localStorage = makeLocalStorage();
+  const existingTransactions = [{ id: 'tx-1', amount: 1500, date: '2026-10-12' }];
+  const importedTransactions = [{ id: 'tx-2', amount: 2500, date: '2026-10-13' }];
+  global.localStorage.setItem('barberflow_transactions_v1', JSON.stringify(existingTransactions));
+
+  storageService.importJSONData(JSON.stringify({
+    transactions: importedTransactions,
+    expenses: [],
+    customers: [],
+    barbers: [],
+    services: [],
+    fixedExpenses: {},
+    bankExpensesOverride: {}
+  }));
+
+  assert.deepEqual(JSON.parse(global.localStorage.getItem('barberflow_transactions_v1')), importedTransactions);
+  assert.deepEqual(
+    JSON.parse(global.localStorage.getItem('barberflow_safe_backup_v1')).transactions,
+    existingTransactions
+  );
+});
+
+test('remote backup export refuses to return a potentially stale local snapshot', async () => {
+  global.localStorage = makeLocalStorage();
+
+  await assert.rejects(
+    storageService.exportJSONData(),
+    /Supabase|administradora/
+  );
+});

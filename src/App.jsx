@@ -11,9 +11,11 @@ export default function App({ onSignOut, userRole }) {
   const [activeTab, setActiveTab] = useState('caja'); // 'caja' | 'clientes' | 'resumen'
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [syncError, setSyncError] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => storageService.onSyncStatus(({ status, error }) => {
     setSyncError(status === 'error' ? error : '');
+    setIsSyncing(status === 'syncing');
   }), []);
 
   return (
@@ -27,6 +29,12 @@ export default function App({ onSignOut, userRole }) {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onSignOut={onSignOut}
       />
+
+      {isSyncing && !syncError && (
+        <div role="status" style={{ padding: '8px 16px', background: '#78350f', color: '#fff', textAlign: 'center' }}>
+          Guardando cambios en Supabase… Esperá a que termine la sincronización.
+        </div>
+      )}
 
       {syncError && (
         <div role="alert" style={{ padding: '10px 16px', background: '#7f1d1d', color: '#fff', textAlign: 'center' }}>
