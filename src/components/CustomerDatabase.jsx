@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { storageService } from '../services/storageService';
-import { Users, Search, MessageSquare, Phone, Calendar, DollarSign, Send, Scissors, Edit3, Cake, Sparkles, Filter } from 'lucide-react';
+import { Users, Search, MessageSquare, Phone, Send, Edit3, Cake } from 'lucide-react';
 
 export default function CustomerDatabase({ isAdmin = false }) {
   const [customers, setCustomers] = useState([]);
@@ -32,11 +32,6 @@ export default function CustomerDatabase({ isAdmin = false }) {
     };
   }, []);
 
-  const loadCustomers = () => {
-    const list = storageService.getCustomers();
-    setCustomers(list);
-  };
-
   const handleSaveBirthdate = (cust) => {
     const updated = storageService.updateCustomerBirthdate(cust.id, birthdateInputValue.trim());
     setCustomers(updated);
@@ -47,7 +42,6 @@ export default function CustomerDatabase({ isAdmin = false }) {
   const todayDay = todayDateObj.getDate().toString().padStart(2, '0');
   const todayMonth = (todayDateObj.getMonth() + 1).toString().padStart(2, '0');
   const todayStrDDMM = `${todayDay}/${todayMonth}`; // e.g. "13/09"
-  const todayStrMMDD = `${todayMonth}-${todayDay}`; // e.g. "09-13"
   const todayYYYYMMDD = todayDateObj.toISOString().split('T')[0];
 
   // Helper to normalize birthdate string to { day, month }

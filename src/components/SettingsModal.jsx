@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { storageService } from '../services/storageService';
-import { Settings, Users, Scissors, Download, Upload, Github, Globe, Plus, Trash2, CheckCircle2, Edit3, Save, ShoppingBag, Tag, ClipboardList, ShieldCheck } from 'lucide-react';
+import { Settings, Download, Upload, Github, Plus, Trash2, Edit3, Save, ClipboardList, ShieldCheck } from 'lucide-react';
 
 export default function SettingsModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('barberos');
@@ -489,7 +489,12 @@ export default function SettingsModal({ isOpen, onClose }) {
                 <button onClick={handleRestoreSafeBackup} className="btn btn-primary btn-sm" style={{ width: '100%', background: '#10b981' }}>
                   <Upload size={14} /> Restaurar backup local seguro
                 </button>
+                <label className="btn btn-secondary btn-sm" style={{ width: '100%', cursor: 'pointer' }}>
+                  <input type="file" accept="application/json,.json" onChange={handleImportFile} hidden />
+                  <Upload size={14} /> Importar backup JSON
+                </label>
                 {backupStatus && <div style={{ fontSize: '0.82rem', color: '#fbbf24', textAlign: 'center' }}>{backupStatus}</div>}
+                {importStatus && <div style={{ fontSize: '0.82rem', color: '#fbbf24', textAlign: 'center' }}>{importStatus}</div>}
               </div>
             </div>
           )}

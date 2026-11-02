@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { storageService } from '../services/storageService';
 import { 
-  TrendingUp, DollarSign, Wallet, CreditCard, PieChart, BarChart2, PlusCircle, Trash2,
-  CheckCircle, ArrowDownCircle, Users, Award, ShieldAlert, FileText, Gift, 
+  TrendingUp, Wallet, CreditCard, PieChart, BarChart2, PlusCircle, Trash2,
+  Users,
   Home, Shield, Wifi, Zap, Droplet, Edit3, Save 
 } from 'lucide-react';
 
@@ -39,17 +39,17 @@ export default function MonthlySummary() {
   const [newFixedExpenseName, setNewFixedExpenseName] = useState('');
   const [newFixedExpenseAmount, setNewFixedExpenseAmount] = useState('');
 
-  useEffect(() => {
-    loadMonthlyReport();
-    void loadCharting().then(() => setChartsReady(true));
-  }, [selectedMonth]);
-
-  const loadMonthlyReport = () => {
+  const loadMonthlyReport = useCallback(() => {
     const data = storageService.getMonthlyFinancialReport(selectedMonth);
     setReport(data);
     setFixedExpensesState(data.fixedExpensesObj);
     setBankExpensesInput(data.egresosPagadosConBanco);
-  };
+  }, [selectedMonth]);
+
+  useEffect(() => {
+    loadMonthlyReport();
+    void loadCharting().then(() => setChartsReady(true));
+  }, [loadMonthlyReport]);
 
   const handleUpdateFixedExpense = (key, val) => {
     const updated = storageService.updateFixedExpense(key, val);

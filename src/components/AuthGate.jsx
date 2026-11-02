@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import App from '../App.jsx';
 import AuthScreen from './AuthScreen.jsx';
 import { authService, storageService } from '../services/storageService';
@@ -8,7 +8,7 @@ export default function AuthGate() {
   const [error, setError] = useState('');
   const [userRole, setUserRole] = useState(null);
 
-  const initializeApp = async (session) => {
+  const initializeApp = useCallback(async (session) => {
     setStatus('loading');
     setError('');
     try {
@@ -20,9 +20,9 @@ export default function AuthGate() {
       setError(syncError.message || 'No se pudo conectar con la base de datos.');
       setStatus('error');
     }
-  };
+  }, []);
 
-  const restoreSession = async () => {
+  const restoreSession = useCallback(async () => {
     try {
       const session = await authService.getSession();
       if (!session) {
@@ -34,11 +34,11 @@ export default function AuthGate() {
       setError(sessionError.message || 'No se pudo validar la sesión.');
       setStatus('error');
     }
-  };
+  }, [initializeApp]);
 
   useEffect(() => {
     void restoreSession();
-  }, []);
+  }, [restoreSession]);
 
   const handleLogin = async (username, password) => {
     setError('');

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { storageService } from '../services/storageService';
 import { 
   UserPlus, DollarSign, CreditCard, Wallet, Calendar, PlusCircle, 
-  Trash2, Phone, Scissors, ArrowDownCircle, ArrowUpCircle, CheckCircle2, Gift, Edit2, ShoppingBag, Cake, Search, MessageSquare, Sparkles 
+  Trash2, Scissors, ArrowDownCircle, CheckCircle2, Gift, Edit2, Cake, Search, MessageSquare, Sparkles
 } from 'lucide-react';
 
 export default function DailyCashRegister({ isAdmin = false }) {
@@ -49,11 +49,7 @@ export default function DailyCashRegister({ isAdmin = false }) {
   const [editBarberId, setEditBarberId] = useState('');
   const [editReason, setEditReason] = useState('');
 
-  useEffect(() => {
-    loadData();
-  }, [selectedDate]);
-
-  const loadData = () => {
+  const loadData = useCallback(() => {
     const loadedBarbers = storageService.getBarbers();
     const loadedServices = storageService.getServices();
     const loadedCustomers = storageService.getCustomers();
@@ -72,7 +68,11 @@ export default function DailyCashRegister({ isAdmin = false }) {
 
     const summary = storageService.getDailySummary(selectedDate);
     setDailySummary(summary);
-  };
+  }, [selectedDate, selectedBarber, selectedService]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   // Handle Client Name Input & Autocomplete Search
   const handleClientNameChange = (val) => {

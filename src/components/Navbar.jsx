@@ -1,4 +1,3 @@
-import React from 'react';
 import { Users, TrendingUp, Settings, Scissors, DollarSign, ShieldCheck, LogOut } from 'lucide-react';
 
 export default function Navbar({ activeTab, setActiveTab, userRole, onOpenSettings, onSignOut }) {

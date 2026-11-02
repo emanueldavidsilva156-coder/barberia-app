@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { LockKeyhole, Mail, Scissors, LogIn } from 'lucide-react';
 
 export default function AuthScreen({ onLogin, isConfigured, error: initialError = '' }) {
