@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { storageService } from '../services/storageService';
 import { Users, Search, MessageSquare, Phone, Calendar, DollarSign, Send, Scissors, Edit3, Cake, Sparkles, Filter } from 'lucide-react';
 
-export default function CustomerDatabase() {
+export default function CustomerDatabase({ isAdmin = false }) {
   const [customers, setCustomers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [birthdayFilter, setBirthdayFilter] = useState('todos'); // 'todos' | 'hoy' | 'mes'
@@ -19,10 +19,17 @@ export default function CustomerDatabase() {
 
   useEffect(() => {
     let mounted = true;
-    storageService.getCustomersShared().then(list => {
+    const load = () => storageService.getCustomersShared().then(list => {
       if (mounted) setCustomers(list);
+    }).catch(error => console.error('No se pudo cargar la base de clientes:', error));
+    const unsubscribe = storageService.onSyncStatus(({ status }) => {
+      if (status === 'synced') void load();
     });
-    return () => { mounted = false; };
+    void load();
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, []);
 
   const loadCustomers = () => {
@@ -294,7 +301,7 @@ export default function CustomerDatabase() {
                         </div>
                       </td>
                       <td>
-                        {isEditingBday ? (
+                        {isEditingBday && isAdmin ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <input 
                               type="text"
@@ -325,14 +332,14 @@ export default function CustomerDatabase() {
                             }}>
                               {cust.birthdate || 'Sin cargar'}
                             </span>
-                            <button 
+                            {isAdmin && <button
                               onClick={() => { setEditingBirthdateCustId(cust.id); setBirthdateInputValue(cust.birthdate || ''); }}
                               className="btn btn-secondary btn-sm"
                               style={{ padding: '2px 6px' }}
                               title="Editar Fecha Cumpleaños"
                             >
                               <Edit3 size={12} />
-                            </button>
+                            </button>}
                           </div>
                         )}
                       </td>

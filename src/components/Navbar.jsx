@@ -1,58 +1,12 @@
-import React, { useState } from 'react';
-import { storageService } from '../services/storageService';
-import { Calendar, Users, TrendingUp, Settings, Scissors, DollarSign, Lock, ShieldCheck, LogOut } from 'lucide-react';
+import React from 'react';
+import { Users, TrendingUp, Settings, Scissors, DollarSign, ShieldCheck, LogOut } from 'lucide-react';
 
-export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole, onOpenSettings, onSignOut }) {
-  const [showPinModal, setShowPinModal] = useState(false);
-  const [inputPin, setInputPin] = useState('');
-  const [pinError, setPinError] = useState(false);
-  const [targetTabAfterPin, setTargetTabAfterPin] = useState(null);
+export default function Navbar({ activeTab, setActiveTab, userRole, onOpenSettings, onSignOut }) {
+  const isAdmin = userRole === 'admin';
 
   const handleTabClick = (tabId) => {
-    if (tabId === 'resumen' && userRole !== 'admin') {
-      setTargetTabAfterPin('resumen');
-      setShowPinModal(true);
-      return;
-    }
+    if (tabId === 'resumen' && !isAdmin) return;
     setActiveTab(tabId);
-  };
-
-  const handleOpenSettingsClick = () => {
-    if (userRole !== 'admin') {
-      setTargetTabAfterPin('settings');
-      setShowPinModal(true);
-      return;
-    }
-    onOpenSettings();
-  };
-
-  const handleVerifyPin = (e) => {
-    e.preventDefault();
-    const isValid = storageService.verifyAdminPIN(inputPin);
-    if (isValid) {
-      storageService.setUserRole('admin');
-      setUserRole('admin');
-      setShowPinModal(false);
-      setInputPin('');
-      setPinError(false);
-
-      if (targetTabAfterPin === 'resumen') {
-        setActiveTab('resumen');
-      } else if (targetTabAfterPin === 'settings') {
-        onOpenSettings();
-      }
-      setTargetTabAfterPin(null);
-    } else {
-      setPinError(true);
-    }
-  };
-
-  const handleSwitchToBarberRole = () => {
-    storageService.setUserRole('barber');
-    setUserRole('barber');
-    if (activeTab === 'resumen') {
-      setActiveTab('caja');
-    }
   };
 
   return (
@@ -133,7 +87,7 @@ export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole,
             </button>
 
             {/* Resumen Mensual Contable (Protected for Admin Ema) */}
-            <button
+            {isAdmin && <button
               onClick={() => handleTabClick('resumen')}
               className="btn"
               style={{
@@ -146,43 +100,22 @@ export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole,
             >
               <TrendingUp size={18} />
               <span>Resumen Mensual</span>
-              {userRole !== 'admin' && <Lock size={13} style={{ marginLeft: '4px', opacity: 0.7 }} />}
-            </button>
+            </button>}
           </nav>
 
           {/* Role Switcher Badge & Settings */}
           <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {userRole === 'admin' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '6px 12px' }}>
-                  <ShieldCheck size={14} /> Modo Admin (Ema)
-                </span>
-                <button 
-                  onClick={handleSwitchToBarberRole} 
-                  className="btn btn-secondary btn-sm"
-                  title="Cambiar a Modo Barbero"
-                >
-                  Bloquear
-                </button>
-              </div>
-            ) : (
-              <button 
-                onClick={() => { setTargetTabAfterPin(null); setShowPinModal(true); }}
-                className="btn btn-secondary btn-sm"
-                style={{ color: 'var(--accent-gold)' }}
-              >
-                <Lock size={14} />
-                <span>Ingreso Admin</span>
-              </button>
-            )}
+            <span className="badge" style={{ background: isAdmin ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.15)', color: isAdmin ? '#34d399' : 'var(--text-muted)', border: '1px solid var(--border-color)', padding: '6px 12px' }}>
+              <ShieldCheck size={14} /> {isAdmin ? 'Administración' : 'Empleado'}
+            </span>
 
-            <button
-              onClick={handleOpenSettingsClick}
+            {isAdmin && <button
+              onClick={onOpenSettings}
               className="btn btn-secondary btn-sm"
               title="Configuración"
             >
               <Settings size={18} />
-            </button>
+            </button>}
             <button
               onClick={onSignOut}
               className="btn btn-secondary btn-sm"
@@ -212,91 +145,14 @@ export default function Navbar({ activeTab, setActiveTab, userRole, setUserRole,
           <span>Clientes</span>
         </button>
 
-        <button
+        {isAdmin && <button
           onClick={() => handleTabClick('resumen')}
           className={`mobile-nav-item ${activeTab === 'resumen' ? 'active' : ''}`}
         >
           <TrendingUp size={20} />
           <span>Resumen</span>
-        </button>
+        </button>}
       </nav>
-
-      {/* PIN VERIFICATION MODAL FOR ADMIN ACCESS */}
-      {showPinModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.85)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          padding: '20px'
-        }}>
-          <div className="glass-panel animate-fade-in" style={{ width: '100%', maxWidth: '400px', padding: '24px', background: 'var(--bg-card)' }}>
-            
-            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-              <div style={{
-                width: '56px', height: '56px', borderRadius: '50%',
-                background: 'rgba(217, 119, 6, 0.15)', color: 'var(--accent-gold)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px auto'
-              }}>
-                <Lock size={28} />
-              </div>
-              <h3 style={{ fontSize: '1.25rem', color: 'var(--text-main)' }}>Acceso Restringido</h3>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Ingresá el PIN de Ema para corregir o eliminar movimientos, ver la contabilidad y abrir ajustes
-              </p>
-            </div>
-
-            <form onSubmit={handleVerifyPin}>
-              <div className="form-group" style={{ marginBottom: '20px' }}>
-                <input 
-                  type="password"
-                  placeholder="PIN de Ema"
-                  value={inputPin}
-                  onChange={(e) => setInputPin(e.target.value)}
-                  className="form-input"
-                  style={{
-                    fontSize: '1.4rem',
-                    textAlign: 'center',
-                    letterSpacing: '0.3em',
-                    fontWeight: 800,
-                    color: 'var(--accent-gold)'
-                  }}
-                  autoFocus
-                  required
-                />
-                {pinError && (
-                  <span style={{ fontSize: '0.8rem', color: '#f43f5e', textAlign: 'center', marginTop: '6px', display: 'block' }}>
-                    PIN incorrecto. Intentá nuevamente.
-                  </span>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button 
-                  type="button" 
-                  onClick={() => { setShowPinModal(false); setInputPin(''); setPinError(false); }}
-                  className="btn btn-secondary"
-                  style={{ flex: 1 }}
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit" 
-                  className="btn btn-primary"
-                  style={{ flex: 1 }}
-                >
-                  Ingresar
-                </button>
-              </div>
-            </form>
-
-          </div>
-        </div>
-      )}
     </>
   );
 }

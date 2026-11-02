@@ -1,4 +1,4 @@
-import React, { useState, Suspense, lazy } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import Navbar from './components/Navbar';
 import { storageService } from './services/storageService';
 
@@ -7,10 +7,14 @@ const CustomerDatabase = lazy(() => import('./components/CustomerDatabase'));
 const MonthlySummary = lazy(() => import('./components/MonthlySummary'));
 const SettingsModal = lazy(() => import('./components/SettingsModal'));
 
-export default function App({ onSignOut }) {
+export default function App({ onSignOut, userRole }) {
   const [activeTab, setActiveTab] = useState('caja'); // 'caja' | 'clientes' | 'resumen'
-  const [userRole, setUserRole] = useState(storageService.getUserRole()); // 'admin' | 'barber'
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [syncError, setSyncError] = useState('');
+
+  useEffect(() => storageService.onSyncStatus(({ status, error }) => {
+    setSyncError(status === 'error' ? error : '');
+  }), []);
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -20,26 +24,40 @@ export default function App({ onSignOut }) {
         activeTab={activeTab} 
         setActiveTab={setActiveTab}
         userRole={userRole}
-        setUserRole={setUserRole}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onSignOut={onSignOut}
       />
+
+      {syncError && (
+        <div role="alert" style={{ padding: '10px 16px', background: '#7f1d1d', color: '#fff', textAlign: 'center' }}>
+          No se pudo guardar en Supabase: {syncError}
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{ marginLeft: '12px' }}
+            onClick={() => storageService.syncPendingChanges().catch(() => {})}
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
 
       {/* Main View Content */}
       <main className="main-content" style={{ flex: 1, padding: '10px 0' }}>
         <Suspense fallback={<div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>Cargando...</div>}>
           {activeTab === 'caja' && <DailyCashRegister isAdmin={userRole === 'admin'} />}
-          {activeTab === 'clientes' && <CustomerDatabase />}
-          {activeTab === 'resumen' && <MonthlySummary />}
+          {activeTab === 'clientes' && <CustomerDatabase isAdmin={userRole === 'admin'} />}
+          {userRole === 'admin' && activeTab === 'resumen' && <MonthlySummary />}
         </Suspense>
       </main>
 
       {/* Modal Settings */}
       <Suspense fallback={null}>
-        <SettingsModal 
-          isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
-        />
+        {userRole === 'admin' && (
+          <SettingsModal
+            isOpen={isSettingsOpen}
+            onClose={() => setIsSettingsOpen(false)}
+          />
+        )}
       </Suspense>
 
       {/* Desktop Footer */}

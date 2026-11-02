@@ -24,47 +24,58 @@ Aplicación web profesional diseñada a medida para la barbería de **Ema y Dieg
 
 ---
 
-## Publicación y base compartida de clientes
+## Accesos, permisos y copias de seguridad
 
-La aplicación usa `localStorage` como respaldo local y Supabase como almacenamiento compartido. Con Supabase configurado, todos los dispositivos pueden consultar las mismas ventas, egresos, clientes, catálogo y valores contables.
+La aplicación usa Supabase Auth y Supabase Database. Cada persona debe tener su propia cuenta; no compartas tu cuenta de administradora. Las cuentas con rol `employee` solo pueden cargar ventas/gastos nuevos, ver la caja del día y la lista de clientes. No pueden acceder al resumen mensual ni a configuración, editar/eliminar registros, ni consultar ventas y gastos de otros días. El rol `admin` se asigna desde el panel de Supabase y no se puede obtener ingresando un PIN en la aplicación.
 
-El acceso de la aplicación usa un usuario único compartido: `barberia`, con la contraseña definida para el equipo. No se usa validación por email.
+### Configuración inicial de permisos
 
-### 1. Crear la base en Supabase
+1. **Descargá primero un backup JSON** desde Configuración en la versión que estás usando. Guardalo en un lugar privado; contiene información de clientes.
+2. En Supabase, abrí **Authentication > Users** y creá una cuenta con tu email. Creá también una cuenta distinta para cada empleado. Definí las contraseñas desde el panel y comunicáselas por un canal privado.
+3. En **SQL Editor**, ejecutá `supabase/schema.sql`. El script conserva las tablas/datos actuales, quita las políticas abiertas anteriores y deja el acceso a los datos sujeto a funciones seguras por rol.
+4. En SQL Editor, reemplazá los tres emails de ejemplo por los emails exactos de las cuentas recién creadas y ejecutá:
 
-1. Crear un proyecto en [Supabase](https://supabase.com).
-2. Abrir **SQL Editor**, pegar el contenido de `supabase/schema.sql` y ejecutarlo.
-	Esto crea las tablas compartidas para clientes, ventas, egresos, catálogo y configuración.
-3. Copiar la URL del proyecto y la clave pública `anon`.
-4. Crear un archivo `.env.local` a partir de `.env.example` y completar:
+```sql
+INSERT INTO public.barberflow_user_roles (user_id, role)
+SELECT id, 'admin' FROM auth.users WHERE lower(email) = lower('TU_EMAIL')
+ON CONFLICT (user_id) DO UPDATE SET role = EXCLUDED.role;
+
+INSERT INTO public.barberflow_user_roles (user_id, role)
+SELECT id, 'employee' FROM auth.users
+WHERE lower(email) IN (lower('EMAIL_EMPLEADO_1'), lower('EMAIL_EMPLEADO_2'))
+ON CONFLICT (user_id) DO UPDATE SET role = EXCLUDED.role;
+```
+
+5. Comprobá los roles con:
+
+```sql
+SELECT u.email, r.role
+FROM auth.users AS u
+JOIN public.barberflow_user_roles AS r ON r.user_id = u.id
+ORDER BY r.role, u.email;
+```
+
+Solo tu cuenta debe figurar como `admin`. En **Authentication > Settings** desactivá el registro público de usuarios, si estuviera habilitado. Para sumar o quitar empleados, hacelo desde Supabase y actualizá su rol desde SQL Editor.
+
+### Publicación en Vercel
+
+En **Vercel > Project > Settings > Environment Variables**, configurá:
+
 ```env
 VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
 VITE_SUPABASE_ANON_KEY=tu-clave-anon
 ```
 
-### 2. Subir a GitHub
+La clave `anon`/publishable puede estar en el frontend: la seguridad depende de las políticas de base y las funciones de este esquema. **Nunca** pongas una `service_role`/secret key en Vercel como `VITE_*`, en el código o en el navegador. Después de agregar o cambiar variables, hacé un nuevo despliegue.
 
-Crear un repositorio vacío en GitHub y ejecutar en esta carpeta:
-```bash
-git init
-git add .
-git commit -m "BarberFlow Pro con base compartida"
-git branch -M main
-git remote add origin https://github.com/TU_USUARIO/barberia-app.git
-git push -u origin main
-```
+### Reducir el riesgo de perder datos
 
-No subir `.env.local`: contiene la configuración del proyecto y debe agregarse también como variable de entorno en el proveedor de hosting.
+- En Supabase, revisá **Database > Backups** y activá la frecuencia de backups que ofrezca tu plan; las opciones y la retención dependen del plan contratado.
+- Descargá además el backup JSON de Configuración con regularidad y antes de cambiar permisos o publicar versiones nuevas.
+- Los cambios de ventas y gastos hechos por empleados se agregan en la base con una función que no permite editar ni borrar operaciones anteriores. Los intentos directos de leer o cambiar tablas quedan bloqueados por los permisos de la base.
+- Los cambios administrativos que eliminan registros archivan el estado anterior en `barberflow_app_data_history`. La cuenta `admin` y el propietario del proyecto siguen teniendo capacidad administrativa; ningún servicio puede garantizar riesgo cero. Verificá periódicamente que exista un backup descargable y que se pueda restaurar.
 
-### 3. Publicar en Vercel
-
-1. Importar el repositorio desde [Vercel](https://vercel.com).
-2. Agregar `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` en **Settings > Environment Variables**.
-3. Publicar con el comando de build `npm run build`.
-
-### 4. Conservar los clientes actuales
-
-Los clientes que estaban guardados en `localhost` no aparecen automáticamente en un dominio nuevo. Usar la opción de exportación JSON de la aplicación actual, abrir la aplicación publicada, entrar en Configuración e importar ese JSON. La importación sincroniza los clientes con Supabase y, desde entonces, todos los celulares cargarán la misma base.
+No ejecutes el nuevo esquema hasta haber descargado tu copia JSON. Si el proyecto ya tiene datos en Supabase, el esquema no los borra; aplicá la migración y luego comprobá que tu usuario `admin` siga viendo los datos antes de crear/usar las cuentas de empleados.
 
 ---
 

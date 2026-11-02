@@ -305,6 +305,7 @@ export default function DailyCashRegister({ isAdmin = false }) {
             type="date" 
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
+            disabled={!isAdmin}
             className="form-input"
             style={{ width: 'auto', padding: '8px 12px', background: 'var(--bg-card)', color: 'var(--accent-gold)', fontWeight: 700 }}
           />

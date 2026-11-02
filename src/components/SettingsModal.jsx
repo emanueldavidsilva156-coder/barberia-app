@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { storageService } from '../services/storageService';
-import { Settings, Users, Scissors, Download, Upload, Github, Globe, Plus, Trash2, CheckCircle2, Key, Edit3, Save, ShoppingBag, Tag, ClipboardList } from 'lucide-react';
+import { Settings, Users, Scissors, Download, Upload, Github, Globe, Plus, Trash2, CheckCircle2, Edit3, Save, ShoppingBag, Tag, ClipboardList, ShieldCheck } from 'lucide-react';
 
 export default function SettingsModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('barberos');
 
   const [barbers, setBarbers] = useState([]);
   const [services, setServices] = useState([]);
-  const [adminPin, setAdminPin] = useState('1234');
-  const [pinStatusMsg, setPinStatusMsg] = useState('');
 
   // Form states for Barber Add
   const [newBarberName, setNewBarberName] = useState('');
@@ -27,6 +25,7 @@ export default function SettingsModal({ isOpen, onClose }) {
 
   const [catalogFilter, setCatalogFilter] = useState('todos');
   const [importStatus, setImportStatus] = useState('');
+  const [backupStatus, setBackupStatus] = useState('');
   const [auditLog, setAuditLog] = useState([]);
 
   useEffect(() => {
@@ -38,16 +37,7 @@ export default function SettingsModal({ isOpen, onClose }) {
   const loadData = () => {
     setBarbers(storageService.getBarbers());
     setServices(storageService.getServices());
-    setAdminPin(storageService.getAdminPIN());
     setAuditLog(storageService.getTransactionAuditLog());
-  };
-
-  const handleSavePin = (e) => {
-    e.preventDefault();
-    if (!adminPin.trim()) return;
-    storageService.setAdminPIN(adminPin.trim());
-    setPinStatusMsg('¡PIN de administrador actualizado!');
-    setTimeout(() => setPinStatusMsg(''), 2500);
   };
 
   const handleStartEditItem = (item) => {
@@ -138,18 +128,40 @@ export default function SettingsModal({ isOpen, onClose }) {
     a.click();
   };
 
+  const handleRestoreSafeBackup = async () => {
+    const restored = storageService.restoreLastKnownBackup();
+    if (restored) {
+      try {
+        await storageService.syncPendingChanges();
+        setBackupStatus('¡Backup local restaurado y sincronizado!');
+        loadData();
+        setTimeout(() => setBackupStatus(''), 3000);
+      } catch {
+        setBackupStatus('El backup se restauró localmente, pero no se pudo sincronizar. Revisá la conexión e intentá nuevamente.');
+      }
+      return;
+    }
+    setBackupStatus('No hay backup local guardado para restaurar.');
+    setTimeout(() => setBackupStatus(''), 3000);
+  };
+
   const handleImportFile = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       const content = evt.target.result;
       const success = storageService.importJSONData(content);
       if (success) {
-        setImportStatus('¡Datos importados con éxito!');
-        loadData();
-        setTimeout(() => setImportStatus(''), 3000);
+        try {
+          await storageService.syncPendingChanges();
+          setImportStatus('¡Datos importados y sincronizados!');
+          loadData();
+          setTimeout(() => setImportStatus(''), 3000);
+        } catch {
+          setImportStatus('Los datos quedaron en este dispositivo, pero no se pudieron sincronizar. Revisá la conexión e intentá nuevamente.');
+        }
       } else {
         alert('Error al leer el archivo de copia de seguridad.');
       }
@@ -228,7 +240,7 @@ export default function SettingsModal({ isOpen, onClose }) {
             className="toggle-btn"
             style={{ borderRadius: 0, padding: '12px 16px', color: activeTab === 'seguridad' ? '#a78bfa' : 'var(--text-muted)', borderBottom: activeTab === 'seguridad' ? '2px solid #a78bfa' : 'none' }}
           >
-            🔑 Clave PIN Admin
+            🔐 Acceso y backups
           </button>
           <button
             onClick={() => setActiveTab('auditoria')}
@@ -459,35 +471,26 @@ export default function SettingsModal({ isOpen, onClose }) {
             </div>
           )}
 
-          {/* TAB SEGURIDAD PIN ADMIN */}
+          {/* TAB DE ACCESO Y BACKUPS */}
           {activeTab === 'seguridad' && (
             <div>
               <h4 style={{ marginBottom: '14px', color: '#a78bfa', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Key size={20} />
-                Clave PIN para Administrador (Modo Ema)
+                <ShieldCheck size={20} />
+                Accesos protegidos y copias de seguridad
               </h4>
               <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
-                El PIN habilita desde la app el resumen, los ajustes y la edición o eliminación de movimientos de caja. El PIN inicial es 1234: cambialo por uno que solo conozcas vos antes de compartir la app con los barberos.
+                Los permisos de administración los define Supabase para cada cuenta; ningún PIN guardado en este navegador puede elevar los permisos. Descargá una copia JSON periódicamente y mantené habilitados los backups de la base.
               </p>
 
-              <form onSubmit={handleSavePin} style={{ maxWidth: '400px', background: 'rgba(15, 23, 42, 0.6)', padding: '20px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
-                <div className="form-group">
-                  <label className="form-label">PIN de Seguridad (4 dígitos)</label>
-                  <input 
-                    type="text"
-                    value={adminPin}
-                    onChange={(e) => setAdminPin(e.target.value)}
-                    className="form-input"
-                    style={{ fontSize: '1.2rem', letterSpacing: '0.2em', fontWeight: 800, textAlign: 'center', color: '#a78bfa' }}
-                    maxLength={8}
-                    required
-                  />
-                </div>
-                <button type="submit" className="btn btn-primary btn-sm" style={{ width: '100%', background: '#8b5cf6' }}>
-                  Guardar Nuevo PIN
+              <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '420px' }}>
+                <button onClick={handleExportData} className="btn btn-secondary btn-sm" style={{ width: '100%' }}>
+                  <Download size={14} /> Descargar backup JSON
                 </button>
-                {pinStatusMsg && <div style={{ fontSize: '0.82rem', color: '#34d399', marginTop: '10px', textAlign: 'center' }}>{pinStatusMsg}</div>}
-              </form>
+                <button onClick={handleRestoreSafeBackup} className="btn btn-primary btn-sm" style={{ width: '100%', background: '#10b981' }}>
+                  <Upload size={14} /> Restaurar backup local seguro
+                </button>
+                {backupStatus && <div style={{ fontSize: '0.82rem', color: '#fbbf24', textAlign: 'center' }}>{backupStatus}</div>}
+              </div>
             </div>
           )}
 

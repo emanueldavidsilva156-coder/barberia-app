@@ -1,13 +1,13 @@
 // Storage & Financial Logic Engine for BarberFlow Pro
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : {};
+const supabaseUrl = env.VITE_SUPABASE_URL;
+const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
 const supabase = supabaseUrl && supabaseAnonKey
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
-const CLOUD_DATA_TABLE = 'barberflow_app_data';
 const CLOUD_KEYS = {
   TRANSACTIONS: 'transactions',
   EXPENSES: 'expenses',
@@ -19,6 +19,9 @@ const CLOUD_KEYS = {
   COMMISSION_MIGRATION: 'commission_migration_50_v1'
 };
 
+const PENDING_SYNC_KEY = 'barberflow_pending_sync_v1';
+const SYNC_STATUS_EVENT = 'barberflow:sync-status';
+
 const STORAGE_KEYS = {
   TRANSACTIONS: 'barberflow_transactions_v1',
   EXPENSES: 'barberflow_expenses_v1',
@@ -26,14 +29,16 @@ const STORAGE_KEYS = {
   BARBERS: 'barberflow_barbers_v1',
   SERVICES: 'barberflow_services_v1',
   USER_ROLE: 'barberflow_user_role_v1',
-  ADMIN_PIN: 'barberflow_admin_pin_v1',
   FIXED_EXPENSES: 'barberflow_fixed_expenses_v1',
   BANK_EXPENSES_OVERRIDE: 'barberflow_bank_expenses_override_v1'
 };
 
 const OPERATIONAL_DATA_RESET_KEY = 'barberflow_operational_data_reset_v2';
+const SAFE_BACKUP_KEY = 'barberflow_safe_backup_v1';
 const COMMISSION_MIGRATION_LOCAL_KEY = 'barberflow_commission_migration_50_v1';
 const DEFAULT_COMMISSION_RATE = 0.5;
+let currentUserRole = null;
+let currentUserId = null;
 
 const DEFAULT_BARBERS = [
   { id: 'ema', name: 'Ema', commissionRate: DEFAULT_COMMISSION_RATE, phone: '', active: true },
@@ -70,85 +75,257 @@ const writeLocal = (key, value) => {
   localStorage.setItem(key, JSON.stringify(value));
 };
 
-const readCloudValue = async (key) => {
-  if (!supabase) return null;
-  const { data, error } = await supabase
-    .from(CLOUD_DATA_TABLE)
-    .select('data')
-    .eq('key', key)
-    .maybeSingle();
-  if (error) {
-    console.error(`No se pudo leer ${key} desde Supabase:`, error);
-    return null;
-  }
-  return data?.data ?? null;
+const getSupabaseData = async (functionName, params = {}) => {
+  if (!supabase) throw new Error('Supabase no está configurado. Revisá VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.');
+  const { data, error } = await supabase.rpc(functionName, params);
+  if (error) throw error;
+  return data;
 };
 
 const writeCloudValue = async (key, value) => {
-  if (!supabase) return;
-  const { error } = await supabase.from(CLOUD_DATA_TABLE).upsert({
-    key,
-    data: value,
-    updated_at: new Date().toISOString()
+  if (!supabase) throw new Error('Supabase no está configurado.');
+  const { error } = await supabase.rpc('admin_save_app_data', {
+    p_key: key,
+    p_value: value
   });
-  if (error) console.error(`No se pudo guardar ${key} en Supabase:`, error);
+  if (error) throw error;
+};
+
+const appendEmployeeEntry = async (collection, entry) => {
+  if (!supabase) throw new Error('Supabase no está configurado.');
+  const { error } = await supabase.rpc('staff_append_entry', {
+    p_collection: collection,
+    p_entry: entry
+  });
+  if (error) throw error;
+};
+
+const emitSyncStatus = (status, error = '') => {
+  if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(SYNC_STATUS_EVENT, { detail: { status, error } }));
+  }
+};
+
+let syncPromise;
+const syncPendingValues = async () => {
+  if (!supabase) return;
+  if (syncPromise) return syncPromise;
+
+  syncPromise = (async () => {
+    while (true) {
+      const pending = readLocal(PENDING_SYNC_KEY, []);
+      if (!Array.isArray(pending)) {
+        writeLocal(PENDING_SYNC_KEY, []);
+        break;
+      }
+      const operation = pending.find(item => item.userId === currentUserId);
+      if (!operation) break;
+      if (operation.role === 'employee') {
+        await appendEmployeeEntry(operation.key, operation.value);
+      } else {
+        await writeCloudValue(operation.key, operation.value);
+      }
+      const latest = readLocal(PENDING_SYNC_KEY, []);
+      writeLocal(PENDING_SYNC_KEY, latest.filter(item => item.id !== operation.id));
+    }
+    emitSyncStatus('synced');
+  })().catch((error) => {
+    console.error('No se pudieron guardar los cambios en Supabase:', error);
+    emitSyncStatus('error', error.message);
+    throw error;
+  }).finally(() => {
+    syncPromise = undefined;
+  });
+
+  return syncPromise;
 };
 
 const saveSharedValue = (localKey, cloudKey, value) => {
+  persistSafeBackup();
+  const previous = readLocal(localKey, Array.isArray(value) ? [] : {});
   writeLocal(localKey, value);
-  void writeCloudValue(cloudKey, value);
+  if (!supabase) return;
+  if (!currentUserRole || !currentUserId) {
+    writeLocal(localKey, previous);
+    emitSyncStatus('error', 'Iniciá sesión para guardar los cambios.');
+    return;
+  }
+  let operation;
+  if (currentUserRole === 'employee') {
+    if (cloudKey !== CLOUD_KEYS.TRANSACTIONS && cloudKey !== CLOUD_KEYS.EXPENSES) {
+      writeLocal(localKey, previous);
+      emitSyncStatus('error', 'Tu cuenta no tiene permiso para modificar esta información.');
+      return;
+    }
+    const previousIds = new Set((Array.isArray(previous) ? previous : []).map(item => item.id));
+    const addedEntries = (Array.isArray(value) ? value : []).filter(item => !previousIds.has(item.id));
+    if (addedEntries.length !== 1 || (Array.isArray(previous) && value.length !== previous.length + 1)) {
+      writeLocal(localKey, previous);
+      emitSyncStatus('error', 'Tu cuenta solo puede agregar operaciones nuevas.');
+      return;
+    }
+    operation = { id: crypto.randomUUID(), userId: currentUserId, role: 'employee', key: cloudKey, value: addedEntries[0] };
+  } else {
+    if (currentUserRole !== 'admin') {
+      writeLocal(localKey, previous);
+      emitSyncStatus('error', 'Tu cuenta no tiene permiso para modificar esta información.');
+      return;
+    }
+    operation = { id: crypto.randomUUID(), userId: currentUserId, role: 'admin', key: cloudKey, value };
+  }
+  const storedPending = readLocal(PENDING_SYNC_KEY, []);
+  const pending = Array.isArray(storedPending) ? storedPending : [];
+  pending.push(operation);
+  writeLocal(PENDING_SYNC_KEY, pending);
+  void syncPendingValues().catch(() => {});
+};
+
+const hasMeaningfulData = (value) => {
+  if (Array.isArray(value)) return value.length > 0;
+  if (value && typeof value === 'object') return Object.keys(value).length > 0;
+  return Boolean(value);
+};
+
+const createSafeBackup = () => ({
+  transactions: readLocal(STORAGE_KEYS.TRANSACTIONS, []),
+  expenses: readLocal(STORAGE_KEYS.EXPENSES, []),
+  customers: readLocal(STORAGE_KEYS.CUSTOMERS, []),
+  barbers: readLocal(STORAGE_KEYS.BARBERS, DEFAULT_BARBERS),
+  services: readLocal(STORAGE_KEYS.SERVICES, DEFAULT_SERVICES),
+  fixedExpenses: readLocal(STORAGE_KEYS.FIXED_EXPENSES, DEFAULT_FIXED_EXPENSES),
+  bankExpensesOverride: readLocal(STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, {}),
+  exportDate: new Date().toISOString()
+});
+
+const persistSafeBackup = () => {
+  const snapshot = createSafeBackup();
+  const hasOperationalData = [
+    snapshot.transactions,
+    snapshot.expenses,
+    snapshot.customers,
+    snapshot.fixedExpenses,
+    snapshot.bankExpensesOverride
+  ].some(hasMeaningfulData);
+  const hasCustomSettings = JSON.stringify(snapshot.barbers) !== JSON.stringify(DEFAULT_BARBERS)
+    || JSON.stringify(snapshot.services) !== JSON.stringify(DEFAULT_SERVICES);
+
+  if (hasOperationalData || hasCustomSettings) {
+    localStorage.setItem(SAFE_BACKUP_KEY, JSON.stringify(snapshot));
+    return snapshot;
+  }
+
+  return null;
 };
 
 export const authService = {
   isConfigured: () => Boolean(supabase),
 
   getSession: async () => {
-    if (!supabase) return { data: { session: null }, error: null };
-    return supabase.auth.getSession();
+    if (!supabase) return null;
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!sessionData.session) return null;
+    const role = await authService.getRole();
+    return { user: sessionData.session.user, role };
   },
 
-  onAuthStateChange: (callback) => {
-    if (!supabase) return { data: { subscription: { unsubscribe: () => {} } } };
-    return supabase.auth.onAuthStateChange(callback);
+  signIn: async (email, password) => {
+    if (!supabase) throw new Error('Supabase no está configurado.');
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    try {
+      const role = await authService.getRole();
+      return { user: data.user, role };
+    } catch (roleError) {
+      await supabase.auth.signOut();
+      throw roleError;
+    }
   },
 
-  signIn: (email, password) => supabase
-    ? supabase.auth.signInWithPassword({ email, password })
-    : Promise.resolve({ data: null, error: new Error('Supabase no está configurado') }),
+  getRole: async () => {
+    const role = await getSupabaseData('get_my_role');
+    if (role !== 'admin' && role !== 'employee') {
+      throw new Error('Esta cuenta todavía no tiene un rol asignado. Pedile al administrador que la habilite.');
+    }
+    currentUserRole = role;
+    const { data } = await supabase.auth.getUser();
+    currentUserId = data.user?.id || null;
+    return role;
+  },
 
-  requestPasswordReset: (email) => supabase
-    ? supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin })
-    : Promise.resolve({ data: null, error: new Error('Supabase no está configurado') }),
+  updatePassword: async (password) => {
+    if (!supabase) throw new Error('Supabase no está configurado.');
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+  },
 
-  updatePassword: (password) => supabase
-    ? supabase.auth.updateUser({ password })
-    : Promise.resolve({ data: null, error: new Error('Supabase no está configurado') }),
-
-  signOut: () => supabase
-    ? supabase.auth.signOut()
-    : Promise.resolve({ error: null })
+  signOut: async () => {
+    try {
+      if (supabase) {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+      }
+    } finally {
+      currentUserRole = null;
+      currentUserId = null;
+      storageService.clearSensitiveLocalData();
+    }
+  }
 };
 
 export const storageService = {
+  onSyncStatus: (callback) => {
+    if (typeof window === 'undefined') return () => {};
+    const listener = (event) => callback(event.detail);
+    window.addEventListener(SYNC_STATUS_EVENT, listener);
+    return () => window.removeEventListener(SYNC_STATUS_EVENT, listener);
+  },
+
+  syncPendingChanges: () => syncPendingValues(),
+  setAuthenticatedUser: (role, userId) => {
+    currentUserRole = role;
+    currentUserId = userId;
+    if (role === 'employee') storageService.clearSensitiveLocalData();
+  },
+
+  clearSensitiveLocalData: () => {
+    [
+      STORAGE_KEYS.TRANSACTIONS,
+      STORAGE_KEYS.EXPENSES,
+      STORAGE_KEYS.CUSTOMERS,
+      STORAGE_KEYS.BARBERS,
+      STORAGE_KEYS.SERVICES,
+      STORAGE_KEYS.FIXED_EXPENSES,
+      STORAGE_KEYS.BANK_EXPENSES_OVERRIDE,
+      STORAGE_KEYS.USER_ROLE,
+      SAFE_BACKUP_KEY
+    ].forEach(key => localStorage.removeItem(key));
+  },
+
   initializeSharedData: async () => {
-    if (localStorage.getItem(OPERATIONAL_DATA_RESET_KEY) !== '1') {
-      const emptyOperationalData = [
-        [STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS, []],
-        [STORAGE_KEYS.EXPENSES, CLOUD_KEYS.EXPENSES, []],
-        [STORAGE_KEYS.CUSTOMERS, CLOUD_KEYS.CUSTOMERS, []],
-        [STORAGE_KEYS.FIXED_EXPENSES, CLOUD_KEYS.FIXED_EXPENSES, {}],
-        [STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, CLOUD_KEYS.BANK_EXPENSES_OVERRIDE, {}]
-      ];
-
-      for (const [localKey, cloudKey, emptyValue] of emptyOperationalData) {
-        writeLocal(localKey, emptyValue);
-        await writeCloudValue(cloudKey, emptyValue);
-      }
-
-      localStorage.setItem(OPERATIONAL_DATA_RESET_KEY, '1');
-    }
+    const sharedCollections = [
+      [STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS, []],
+      [STORAGE_KEYS.EXPENSES, CLOUD_KEYS.EXPENSES, []],
+      [STORAGE_KEYS.CUSTOMERS, CLOUD_KEYS.CUSTOMERS, []],
+      [STORAGE_KEYS.BARBERS, CLOUD_KEYS.BARBERS, DEFAULT_BARBERS],
+      [STORAGE_KEYS.SERVICES, CLOUD_KEYS.SERVICES, DEFAULT_SERVICES],
+      [STORAGE_KEYS.FIXED_EXPENSES, CLOUD_KEYS.FIXED_EXPENSES, DEFAULT_FIXED_EXPENSES],
+      [STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, CLOUD_KEYS.BANK_EXPENSES_OVERRIDE, {}]
+    ];
 
     if (!supabase) {
+      const hadLocalOperationalData = [
+        STORAGE_KEYS.TRANSACTIONS,
+        STORAGE_KEYS.EXPENSES,
+        STORAGE_KEYS.CUSTOMERS,
+        STORAGE_KEYS.FIXED_EXPENSES,
+        STORAGE_KEYS.BANK_EXPENSES_OVERRIDE
+      ].some((key) => hasMeaningfulData(readLocal(key, null)));
+      if (hadLocalOperationalData) persistSafeBackup();
+
+      for (const [localKey, , fallbackValue] of sharedCollections) {
+        if (localStorage.getItem(localKey) === null) writeLocal(localKey, fallbackValue);
+      }
       if (localStorage.getItem(COMMISSION_MIGRATION_LOCAL_KEY) !== '1') {
         const updatedBarbers = storageService.getBarbers().map(barber => ({
           ...barber,
@@ -160,63 +337,63 @@ export const storageService = {
       return;
     }
 
-    const sharedCollections = [
-      [STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS, []],
-      [STORAGE_KEYS.EXPENSES, CLOUD_KEYS.EXPENSES, []],
-      [STORAGE_KEYS.BARBERS, CLOUD_KEYS.BARBERS, DEFAULT_BARBERS],
-      [STORAGE_KEYS.SERVICES, CLOUD_KEYS.SERVICES, DEFAULT_SERVICES],
-      [STORAGE_KEYS.FIXED_EXPENSES, CLOUD_KEYS.FIXED_EXPENSES, DEFAULT_FIXED_EXPENSES],
-      [STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, CLOUD_KEYS.BANK_EXPENSES_OVERRIDE, {}]
-    ];
-
-    for (const [localKey, cloudKey, defaultValue] of sharedCollections) {
-      const cloudValue = await readCloudValue(cloudKey);
-      if (cloudValue !== null) {
-        writeLocal(localKey, cloudValue);
-        continue;
+    if (!currentUserRole || !currentUserId) {
+      throw new Error('No hay una sesión autorizada para cargar los datos.');
+    }
+    const remoteValues = await getSupabaseData(
+      currentUserRole === 'admin' ? 'admin_get_app_data' : 'staff_get_app_data'
+    );
+    const storedPending = readLocal(PENDING_SYNC_KEY, []);
+    const pending = Array.isArray(storedPending) ? storedPending : [];
+    if (currentUserRole === 'employee') {
+      for (const [localKey, cloudKey, defaultValue] of sharedCollections) {
+        const remoteValue = remoteValues?.[cloudKey];
+        writeLocal(localKey, remoteValue ?? defaultValue);
       }
-
-      const localValue = readLocal(localKey, defaultValue);
-      writeLocal(localKey, localValue);
-      await writeCloudValue(cloudKey, localValue);
+      return;
     }
 
-    const commissionMigration = await readCloudValue(CLOUD_KEYS.COMMISSION_MIGRATION);
+    for (const [localKey, cloudKey, defaultValue] of sharedCollections) {
+      const localValue = readLocal(localKey, defaultValue);
+      const hasRemoteValue = Object.prototype.hasOwnProperty.call(remoteValues, cloudKey)
+        && remoteValues[cloudKey] !== null;
+      const remoteValue = remoteValues[cloudKey];
+      let value = hasRemoteValue ? remoteValue : localValue;
+
+      const pendingValue = pending.find(item => item.userId === currentUserId && item.key === cloudKey);
+      if (pendingValue) {
+        value = pendingValue.value;
+      } else if (hasRemoteValue && hasMeaningfulData(localValue) && !hasMeaningfulData(remoteValue)) {
+        persistSafeBackup();
+        value = localValue;
+        pending.push({ id: crypto.randomUUID(), userId: currentUserId, role: 'admin', key: cloudKey, value });
+      } else if (!hasRemoteValue) {
+        pending.push({ id: crypto.randomUUID(), userId: currentUserId, role: 'admin', key: cloudKey, value });
+      }
+
+      writeLocal(localKey, value);
+    }
+    writeLocal(PENDING_SYNC_KEY, pending);
+
+    writeLocal(PENDING_SYNC_KEY, pending);
+    const commissionMigration = remoteValues?.[CLOUD_KEYS.COMMISSION_MIGRATION];
     if (commissionMigration !== 'complete') {
       const updatedBarbers = storageService.getBarbers().map(barber => ({
         ...barber,
         commissionRate: DEFAULT_COMMISSION_RATE
       }));
       writeLocal(STORAGE_KEYS.BARBERS, updatedBarbers);
-      await writeCloudValue(CLOUD_KEYS.BARBERS, updatedBarbers);
-      await writeCloudValue(CLOUD_KEYS.COMMISSION_MIGRATION, 'complete');
+      pending.push({ id: crypto.randomUUID(), userId: currentUserId, role: 'admin', key: CLOUD_KEYS.BARBERS, value: updatedBarbers });
+      pending.push({ id: crypto.randomUUID(), userId: currentUserId, role: 'admin', key: CLOUD_KEYS.COMMISSION_MIGRATION, value: 'complete' });
+      writeLocal(PENDING_SYNC_KEY, pending);
     }
 
-    const customers = await storageService.getCustomersShared();
-    writeLocal(STORAGE_KEYS.CUSTOMERS, customers);
-    await writeCloudValue(CLOUD_KEYS.CUSTOMERS, customers);
+    await syncPendingValues();
   },
 
-  // --- ROLE & PIN MANAGEMENT ---
+  // --- SESSION ROLE ---
   getUserRole: () => {
-    return localStorage.getItem(STORAGE_KEYS.USER_ROLE) || 'barber'; // 'admin' | 'barber'
-  },
-
-  setUserRole: (role) => {
-    localStorage.setItem(STORAGE_KEYS.USER_ROLE, role);
-  },
-
-  getAdminPIN: () => {
-    return localStorage.getItem(STORAGE_KEYS.ADMIN_PIN) || '1234';
-  },
-
-  setAdminPIN: (pin) => {
-    localStorage.setItem(STORAGE_KEYS.ADMIN_PIN, pin);
-  },
-
-  verifyAdminPIN: (inputPin) => {
-    const currentPin = storageService.getAdminPIN();
-    return inputPin.trim() === currentPin.trim();
+    return currentUserRole;
   },
 
   // --- BANK EXPENSES OVERRIDE ---
@@ -454,65 +631,31 @@ export const storageService = {
   },
 
   updateCustomerBirthdate: (customerId, birthdate) => {
+    if (currentUserRole !== 'admin') return storageService.getCustomers();
     const customers = storageService.getCustomers();
     const updated = customers.map(c => c.id === customerId ? { ...c, birthdate } : c);
-    localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(updated));
-    storageService.syncCustomersToCloud(updated);
+    saveSharedValue(STORAGE_KEYS.CUSTOMERS, CLOUD_KEYS.CUSTOMERS, updated);
     return updated;
   },
 
   getCustomersShared: async () => {
-    const localData = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
-
-    if (!supabase) return storageService.getCustomers();
-
-    const sharedCustomers = await readCloudValue(CLOUD_KEYS.CUSTOMERS);
-    if (sharedCustomers !== null) {
-      writeLocal(STORAGE_KEYS.CUSTOMERS, sharedCustomers);
-      return sharedCustomers;
-    }
-
-    const { data, error } = await supabase
-      .from('barberflow_customers')
-      .select('id, data')
-      .order('updated_at', { ascending: false });
-
-    if (error) {
-      console.error('No se pudo cargar la base compartida de clientes:', error);
-      return storageService.getCustomers();
-    }
-
-    if (data.length > 0) {
-      const customers = data.map(row => row.data);
-      localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
-      await writeCloudValue(CLOUD_KEYS.CUSTOMERS, customers);
+    if (supabase && currentUserRole === 'employee') {
+      const data = await getSupabaseData('staff_get_app_data');
+      const customers = data?.customers || [];
+      writeLocal(STORAGE_KEYS.CUSTOMERS, customers);
       return customers;
     }
-
-    const localCustomers = localData ? JSON.parse(localData) : storageService.getCustomers();
-    if (localData && localCustomers.length > 0) {
-      await storageService.syncCustomersToCloud(localCustomers);
-    }
-    return localCustomers;
+    return storageService.getCustomers();
   },
 
   syncCustomersToCloud: async (customers) => {
-    if (!supabase || !customers) return;
-
-    await writeCloudValue(CLOUD_KEYS.CUSTOMERS, customers);
-
-    const rows = customers.map(customer => ({
-      id: customer.id,
-      data: customer,
-      updated_at: new Date().toISOString()
-    }));
-    if (rows.length > 0) {
-      const { error } = await supabase.from('barberflow_customers').upsert(rows);
-      if (error) console.error('No se pudo sincronizar la base de clientes:', error);
-    }
+    if (!customers || currentUserRole !== 'admin') return;
+    saveSharedValue(STORAGE_KEYS.CUSTOMERS, CLOUD_KEYS.CUSTOMERS, customers);
+    await syncPendingValues();
   },
 
   syncCustomersFromTransactions: (transactions) => {
+    if (currentUserRole === 'employee') return storageService.getCustomers();
     const customerMap = {};
     const currentMonthPrefix = new Date().toISOString().substring(0, 7);
 
@@ -550,8 +693,7 @@ export const storageService = {
     });
 
     const customerList = Object.values(customerMap);
-    localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customerList));
-    void storageService.syncCustomersToCloud(customerList);
+    saveSharedValue(STORAGE_KEYS.CUSTOMERS, CLOUD_KEYS.CUSTOMERS, customerList);
     return customerList;
   },
 
@@ -754,6 +896,34 @@ export const storageService = {
     return storageService.getRawMonthMetrics(yearMonthStr);
   },
 
+  backupData: () => persistSafeBackup(),
+
+  restoreLastKnownBackup: () => {
+    const rawBackup = localStorage.getItem(SAFE_BACKUP_KEY);
+    if (!rawBackup) return false;
+
+    try {
+      const backup = JSON.parse(rawBackup);
+      const restores = [
+        ['transactions', STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS],
+        ['expenses', STORAGE_KEYS.EXPENSES, CLOUD_KEYS.EXPENSES],
+        ['customers', STORAGE_KEYS.CUSTOMERS, CLOUD_KEYS.CUSTOMERS],
+        ['barbers', STORAGE_KEYS.BARBERS, CLOUD_KEYS.BARBERS],
+        ['services', STORAGE_KEYS.SERVICES, CLOUD_KEYS.SERVICES],
+        ['fixedExpenses', STORAGE_KEYS.FIXED_EXPENSES, CLOUD_KEYS.FIXED_EXPENSES],
+        ['bankExpensesOverride', STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, CLOUD_KEYS.BANK_EXPENSES_OVERRIDE]
+      ];
+      for (const [field, localKey, cloudKey] of restores) {
+        if (backup[field] !== undefined) saveSharedValue(localKey, cloudKey, backup[field]);
+      }
+      localStorage.setItem(OPERATIONAL_DATA_RESET_KEY, '1');
+      return true;
+    } catch (error) {
+      console.error('No se pudo restaurar el backup seguro:', error);
+      return false;
+    }
+  },
+
   exportJSONData: () => {
     return JSON.stringify({
       transactions: storageService.getTransactions(),
@@ -762,6 +932,7 @@ export const storageService = {
       barbers: storageService.getBarbers(),
       services: storageService.getServices(),
       fixedExpenses: storageService.getFixedExpenses(),
+      bankExpensesOverride: readLocal(STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, {}),
       exportDate: new Date().toISOString()
     }, null, 2);
   },
@@ -769,15 +940,18 @@ export const storageService = {
   importJSONData: (jsonString) => {
     try {
       const parsed = JSON.parse(jsonString);
-      if (parsed.transactions) localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(parsed.transactions));
-      if (parsed.expenses) localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(parsed.expenses));
-      if (parsed.customers) {
-        localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(parsed.customers));
-        storageService.syncCustomersToCloud(parsed.customers);
+      const imports = [
+        ['transactions', STORAGE_KEYS.TRANSACTIONS, CLOUD_KEYS.TRANSACTIONS],
+        ['expenses', STORAGE_KEYS.EXPENSES, CLOUD_KEYS.EXPENSES],
+        ['customers', STORAGE_KEYS.CUSTOMERS, CLOUD_KEYS.CUSTOMERS],
+        ['barbers', STORAGE_KEYS.BARBERS, CLOUD_KEYS.BARBERS],
+        ['services', STORAGE_KEYS.SERVICES, CLOUD_KEYS.SERVICES],
+        ['fixedExpenses', STORAGE_KEYS.FIXED_EXPENSES, CLOUD_KEYS.FIXED_EXPENSES],
+        ['bankExpensesOverride', STORAGE_KEYS.BANK_EXPENSES_OVERRIDE, CLOUD_KEYS.BANK_EXPENSES_OVERRIDE]
+      ];
+      for (const [field, localKey, cloudKey] of imports) {
+        if (parsed[field] !== undefined) saveSharedValue(localKey, cloudKey, parsed[field]);
       }
-      if (parsed.barbers) localStorage.setItem(STORAGE_KEYS.BARBERS, JSON.stringify(parsed.barbers));
-      if (parsed.services) localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(parsed.services));
-      if (parsed.fixedExpenses) localStorage.setItem(STORAGE_KEYS.FIXED_EXPENSES, JSON.stringify(parsed.fixedExpenses));
       return true;
     } catch (e) {
       console.error('Error importing JSON data:', e);

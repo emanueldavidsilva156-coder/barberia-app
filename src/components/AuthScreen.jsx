@@ -1,18 +1,23 @@
 import React, { useState } from 'react';
-import { LockKeyhole, UserRound, Scissors, LogIn } from 'lucide-react';
+import { LockKeyhole, Mail, Scissors, LogIn } from 'lucide-react';
 
-export default function AuthScreen({ onLogin }) {
-  const [username, setUsername] = useState('');
+export default function AuthScreen({ onLogin, isConfigured, error: initialError = '' }) {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialError);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    if (username.trim().toLowerCase() === 'barberia' && password === '370') {
-      onLogin();
-      return;
+    setError('');
+    setIsSubmitting(true);
+    try {
+      await onLogin(email.trim(), password);
+    } catch (loginError) {
+      setError(loginError.message || 'No se pudo iniciar sesión.');
+    } finally {
+      setIsSubmitting(false);
     }
-    setError('Usuario o contraseña incorrectos.');
   };
 
   return (
@@ -29,9 +34,14 @@ export default function AuthScreen({ onLogin }) {
         </div>
 
         <form onSubmit={handleSubmit}>
+          {!isConfigured && (
+            <p style={{ color: '#fbbf24', fontSize: '0.85rem', marginBottom: '14px' }}>
+              Falta configurar Supabase para habilitar el inicio de sesión.
+            </p>
+          )}
           <div className="form-group">
-            <label className="form-label"><UserRound size={14} /> Usuario</label>
-            <input className="form-input" type="text" value={username} onChange={(event) => setUsername(event.target.value)} required autoComplete="username" />
+            <label className="form-label"><Mail size={14} /> Email</label>
+            <input className="form-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="username" />
           </div>
 
           <div className="form-group">
@@ -41,7 +51,7 @@ export default function AuthScreen({ onLogin }) {
 
           {error && <p style={{ color: '#fb7185', fontSize: '0.85rem', marginBottom: '14px' }}>{error}</p>}
 
-          <button className="btn btn-primary btn-lg" type="submit" style={{ width: '100%' }}>
+          <button className="btn btn-primary btn-lg" type="submit" style={{ width: '100%' }} disabled={!isConfigured || isSubmitting}>
             <LogIn size={18} /> Ingresar
           </button>
         </form>
