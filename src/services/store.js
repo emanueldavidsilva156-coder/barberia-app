@@ -4,9 +4,15 @@
 import { createClient } from '@supabase/supabase-js';
 import { currentMonth, monthEnd, monthOf, monthStart } from './dates.js';
 
+// La dirección del proyecto y la clave publishable son públicas por diseño: la
+// seguridad la dan las reglas RLS de la base. Se dejan como valor por defecto para
+// que GitHub Pages y Vercel usen siempre el mismo proyecto aunque falten variables.
+const DEFAULT_SUPABASE_URL = 'https://wiprvpjkigjgngncemdl.supabase.co';
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_0SQtxXdT5m4XOhjqsz_Wqg_1xwaXEcm';
+
 const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : {};
-const supabaseUrl = env.VITE_SUPABASE_URL;
-const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
 const loginEmailTemplate = env.VITE_LOGIN_EMAIL_TEMPLATE || 'barber.radikal+{usuario}@gmail.com';
 
 const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;

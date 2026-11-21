@@ -36,20 +36,16 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Validate Supabase configuration
-        if: github.event_name == 'push'
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: |
-          test -n "$VITE_SUPABASE_URL" || { echo "Missing VITE_SUPABASE_URL repository secret"; exit 1; }
-          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Missing VITE_SUPABASE_ANON_KEY repository secret"; exit 1; }
-
+      # Los secretos son opcionales: si no están, se usa el proyecto definido en src/services/store.js.
       - name: Build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
+
+      - name: Validate Supabase configuration
+        run: |
+          grep -rq "supabase.co" dist/assets || { echo "La app compilada no tiene la dirección de Supabase"; exit 1; }
       
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
