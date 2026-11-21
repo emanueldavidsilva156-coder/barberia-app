@@ -9,7 +9,7 @@
 // Propiedades del script que hay que cargar (Configuración del proyecto >
 // Propiedades del script):
 //   SUPABASE_URL               https://xxxx.supabase.co
-//   SUPABASE_SERVICE_ROLE_KEY  la clave service_role (secreta: solo acá)
+//   SUPABASE_SERVICE_ROLE_KEY  la clave secreta (sb_secret_... o la service_role vieja): solo acá
 
 const BACKUP_FOLDER_NAME = 'Barberia - Backups Supabase';
 const DAILY_BACKUP_FUNCTION = 'createSupabaseDriveBackup';
@@ -100,18 +100,14 @@ function fetchTable_(baseUrl, table, orderColumn, headers) {
 function getConfig_() {
   const properties = PropertiesService.getScriptProperties();
   const supabaseUrl = properties.getProperty('SUPABASE_URL');
-  const serviceRoleKey = properties.getProperty('SUPABASE_SERVICE_ROLE_KEY');
+  const serviceRoleKey = (properties.getProperty('SUPABASE_SERVICE_ROLE_KEY') || '').trim();
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error('Configurá SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY en las propiedades del script.');
   }
-  return {
-    baseUrl: supabaseUrl.replace(/\/+$/, ''),
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      Accept: 'application/json'
-    }
-  };
+  const headers = { apikey: serviceRoleKey, Accept: 'application/json' };
+  // Las claves nuevas (sb_secret_...) van solo en "apikey"; la service_role vieja (JWT) también como Bearer.
+  if (serviceRoleKey.startsWith('eyJ')) headers.Authorization = `Bearer ${serviceRoleKey}`;
+  return { baseUrl: supabaseUrl.trim().replace(/\/+$/, ''), headers };
 }
 
 function getBackupFolder_() {

@@ -95,7 +95,7 @@ El script vive dentro de la cuenta de la barbería, así que las copias quedan e
 3. Entrá a **script.google.com > Nuevo proyecto**, llamalo "Backup Barbería", borrá lo que aparece y pegá el contenido de [scripts/google-drive-backup.gs](scripts/google-drive-backup.gs).
 4. **Engranaje (Configuración del proyecto)**: zona horaria **(GMT-03:00) Buenos Aires**. Más abajo, en **Propiedades del script**, agregá:
    - `SUPABASE_URL` → la Project URL.
-   - `SUPABASE_SERVICE_ROLE_KEY` → la clave `service_role` (Supabase > Project Settings > API). Esta clave abre toda la base: va **solo acá**.
+   - `SUPABASE_SERVICE_ROLE_KEY` → la clave secreta (Supabase > Project Settings > API Keys > **Secret keys**, empieza con `sb_secret_`; también sirve la `service_role` de la pestaña Legacy). Esta clave abre toda la base: va **solo acá**.
 5. Elegí la función **installDailyBackup** y tocá **Ejecutar**. Cuando Google pida permisos: **Revisar permisos** → elegí la cuenta de la barbería → "Google no verificó esta app" → **Configuración avanzada > Ir a Backup Barbería** → **Permitir**. Es normal: el script es tuyo.
 6. Comprobá que en el Drive de la barbería aparezca la carpeta **Barberia - Backups Supabase** con un archivo `backup_barberia_....json.gz`.
 7. En el **reloj (Activadores)**, abrí la tarea diaria y en **Notificaciones de error** elegí **Inmediatamente**.
