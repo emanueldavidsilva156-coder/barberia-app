@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { LockKeyhole, Save } from 'lucide-react';
-import { authService } from '../services/storageService';
+import { authService } from '../services/store.js';
 
 export default function PasswordSetup() {
   const [currentPassword, setCurrentPassword] = useState('');

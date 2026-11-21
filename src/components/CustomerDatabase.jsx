@@ -1,10 +1,16 @@
-import { useState, useEffect } from 'react';
-import { storageService } from '../services/storageService';
-import { Users, Search, MessageSquare, Phone, Send, Edit3, Cake } from 'lucide-react';
+import { useState } from 'react';
+import { store } from '../services/store.js';
+import { useStoreVersion } from '../services/useStore.js';
+import { formatDate, isBirthdayOn, todayISO } from '../services/dates.js';
+import { money } from '../services/finance.js';
+import { Users, Search, MessageSquare, Phone, Send, Edit3, Cake, History } from 'lucide-react';
 
-export default function CustomerDatabase({ isAdmin = false }) {
-  const [customers, setCustomers] = useState([]);
+export default function CustomerDatabase() {
+  useStoreVersion();
+  const customers = store.customers();
   const [searchTerm, setSearchTerm] = useState('');
+  const [historyCustomer, setHistoryCustomer] = useState(null);
+  const [historyRows, setHistoryRows] = useState(null);
   const [birthdayFilter, setBirthdayFilter] = useState('todos'); // 'todos' | 'hoy' | 'mes'
   const [specificDateFilter, setSpecificDateFilter] = useState(''); // e.g. "13/09" or "13-09"
 
@@ -17,32 +23,30 @@ export default function CustomerDatabase({ isAdmin = false }) {
   const [editingBirthdateCustId, setEditingBirthdateCustId] = useState(null);
   const [birthdateInputValue, setBirthdateInputValue] = useState('');
 
-  useEffect(() => {
-    let mounted = true;
-    const load = () => storageService.getCustomersShared().then(list => {
-      if (mounted) setCustomers(list);
-    }).catch(error => console.error('No se pudo cargar la base de clientes:', error));
-    const unsubscribe = storageService.onSyncStatus(({ status }) => {
-      if (status === 'synced') void load();
-    });
-    void load();
-    return () => {
-      mounted = false;
-      unsubscribe();
-    };
-  }, []);
-
-  const handleSaveBirthdate = (cust) => {
-    const updated = storageService.updateCustomerBirthdate(cust.id, birthdateInputValue.trim());
-    setCustomers(updated);
-    setEditingBirthdateCustId(null);
+  const handleSaveBirthdate = async (cust) => {
+    try {
+      await store.updateCustomer(cust.id, { birthdate: birthdateInputValue.trim(), edit_reason: 'Cumpleaños actualizado' });
+      setEditingBirthdateCustId(null);
+    } catch (error) {
+      alert(`No se guardó: ${error.message}`);
+    }
   };
 
-  const todayDateObj = new Date();
-  const todayDay = todayDateObj.getDate().toString().padStart(2, '0');
-  const todayMonth = (todayDateObj.getMonth() + 1).toString().padStart(2, '0');
+  const handleOpenHistory = async (cust) => {
+    setHistoryCustomer(cust);
+    setHistoryRows(null);
+    try {
+      setHistoryRows(await store.customerHistory(cust.id));
+    } catch (error) {
+      setHistoryCustomer(null);
+      alert(`No se pudo cargar el historial: ${error.message}`);
+    }
+  };
+
+  const todayYYYYMMDD = todayISO();
+  const todayDay = todayYYYYMMDD.slice(8, 10);
+  const todayMonth = todayYYYYMMDD.slice(5, 7);
   const todayStrDDMM = `${todayDay}/${todayMonth}`; // e.g. "13/09"
-  const todayYYYYMMDD = todayDateObj.toISOString().split('T')[0];
 
   // Helper to normalize birthdate string to { day, month }
   const parseBirthdateObj = (bStr) => {
@@ -81,7 +85,7 @@ export default function CustomerDatabase({ isAdmin = false }) {
 
     // 2. Birthday Preset Filter
     if (birthdayFilter === 'hoy') {
-      return storageService.isBirthdayToday(c.birthdate, todayYYYYMMDD);
+      return isBirthdayOn(c.birthdate, todayYYYYMMDD);
     }
     
     if (birthdayFilter === 'mes') {
@@ -277,7 +281,7 @@ export default function CustomerDatabase({ isAdmin = false }) {
               </thead>
               <tbody>
                 {filteredCustomers.map(cust => {
-                  const isBirthday = storageService.isBirthdayToday(cust.birthdate, todayYYYYMMDD);
+                  const isBirthday = isBirthdayOn(cust.birthdate, todayYYYYMMDD);
                   const isEditingBday = editingBirthdateCustId === cust.id;
 
                   return (
@@ -295,7 +299,7 @@ export default function CustomerDatabase({ isAdmin = false }) {
                         </div>
                       </td>
                       <td>
-                        {isEditingBday && isAdmin ? (
+                        {isEditingBday ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <input 
                               type="text"
@@ -326,27 +330,32 @@ export default function CustomerDatabase({ isAdmin = false }) {
                             }}>
                               {cust.birthdate || 'Sin cargar'}
                             </span>
-                            {isAdmin && <button
+                            <button
                               onClick={() => { setEditingBirthdateCustId(cust.id); setBirthdateInputValue(cust.birthdate || ''); }}
                               className="btn btn-secondary btn-sm"
                               style={{ padding: '2px 6px' }}
                               title="Editar Fecha Cumpleaños"
                             >
                               <Edit3 size={12} />
-                            </button>}
+                            </button>
                           </div>
                         )}
                       </td>
                       <td>
-                        <span className="badge badge-gold">
-                          {cust.monthlyVisitsCount || 0} este mes ({cust.visitCount} tot.)
-                        </span>
+                        <button
+                          onClick={() => handleOpenHistory(cust)}
+                          className="badge badge-gold"
+                          style={{ cursor: 'pointer', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          title="Ver historial de visitas"
+                        >
+                          <History size={12} /> {cust.month_visit_count} este mes ({cust.visit_count} tot.)
+                        </button>
                       </td>
                       <td style={{ fontWeight: 700, color: '#34d399' }}>
-                        ${cust.totalSpent.toLocaleString('es-AR')}
+                        {money(cust.total_spent)}
                       </td>
                       <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                        {cust.lastVisit}
+                        {cust.last_visit ? formatDate(cust.last_visit) : '—'}
                       </td>
                       <td>
                         {isBirthday ? (
@@ -377,6 +386,63 @@ export default function CustomerDatabase({ isAdmin = false }) {
           </div>
         )}
       </div>
+
+      {/* MODAL HISTORIAL DEL CLIENTE */}
+      {historyCustomer && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0, 0, 0, 0.8)',
+          backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px'
+        }}>
+          <div className="glass-panel animate-fade-in" style={{ width: '100%', maxWidth: '620px', maxHeight: '85vh', overflowY: 'auto', padding: '24px', background: 'var(--bg-card)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-gold)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <History size={22} />
+                Historial de {historyCustomer.name}
+              </h3>
+              <button onClick={() => setHistoryCustomer(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.5rem', cursor: 'pointer' }}>
+                &times;
+              </button>
+            </div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginBottom: '14px' }}>
+              {historyCustomer.visit_count} visitas · Total gastado {money(historyCustomer.total_spent)}
+              {historyCustomer.phone && ` · ${historyCustomer.phone}`}
+            </p>
+            {historyRows === null ? (
+              <p style={{ color: 'var(--text-muted)' }}>Cargando…</p>
+            ) : historyRows.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)' }}>Todavía no tiene visitas registradas.</p>
+            ) : (
+              <div className="custom-table-container">
+                <table className="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Servicio</th>
+                      <th>Barbero</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyRows.map(visit => (
+                      <tr key={visit.id} style={visit.voided ? { opacity: 0.5, textDecoration: 'line-through' } : {}}>
+                        <td>{formatDate(visit.movement_date)}</td>
+                        <td>{visit.service_name}</td>
+                        <td>{store.barberName(visit.barber_id)}</td>
+                        <td style={{ fontWeight: 700 }}>
+                          {money(Number(visit.amount) + Number(visit.tip))}
+                          <div style={{ fontSize: '0.7rem', color: visit.payment_method === 'efectivo' ? '#34d399' : '#38bdf8' }}>
+                            {visit.payment_method === 'efectivo' ? 'Efectivo' : 'Transf.'}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* MODAL ENVIAR WHATSAPP DIRECTO */}
       {selectedCustomer && (

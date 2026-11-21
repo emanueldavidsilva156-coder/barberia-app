@@ -1,0 +1,72 @@
+# Restaurar una copia de seguridad en un proyecto de Supabase NUEVO y vacío.
+#
+# Va en el mismo repositorio privado de backups, en .github/workflows/.
+# Se ejecuta a mano desde la pestaña Actions > "Restaurar backup" > Run workflow.
+#
+# Por seguridad nunca restaura sobre la base que está en uso: hay que crear un
+# proyecto nuevo en Supabase y cargar su cadena de conexión en el secreto
+# RESTORE_DB_URL. Después se apunta la app al proyecto nuevo (ver README).
+
+name: Restaurar backup
+
+on:
+  workflow_dispatch:
+    inputs:
+      fecha:
+        description: 'Fecha del backup a restaurar (AAAA-MM-DD). Vacío = el último.'
+        required: false
+        default: ''
+      confirmar:
+        description: 'Escribí RESTAURAR para confirmar'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Verificar confirmación
+        env:
+          CONFIRMAR: ${{ inputs.confirmar }}
+        run: |
+          test "$CONFIRMAR" = "RESTAURAR" || { echo "Escribí RESTAURAR para confirmar."; exit 1; }
+
+      - name: Descargar el historial de backups
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Elegir la copia
+        env:
+          FECHA: ${{ inputs.fecha }}
+        run: |
+          if [ -n "$FECHA" ]; then
+            COMMIT=$(git log --format=%H --grep="^Backup $FECHA$" -n 1)
+            test -n "$COMMIT" || { echo "No hay backup del $FECHA"; exit 1; }
+            git checkout "$COMMIT"
+          fi
+          echo "Se va a restaurar el backup del: $(cat backup/fecha.txt)"
+
+      - name: Instalar cliente de PostgreSQL
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Restaurar en el proyecto nuevo
+        env:
+          RESTORE_DB_URL: ${{ secrets.RESTORE_DB_URL }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          test -n "$RESTORE_DB_URL" || { echo "Falta el secreto RESTORE_DB_URL (proyecto nuevo)."; exit 1; }
+          test "$RESTORE_DB_URL" != "$SUPABASE_DB_URL" || { echo "RESTORE_DB_URL no puede ser la base en uso."; exit 1; }
+          psql --single-transaction --variable ON_ERROR_STOP=1 \
+            --file backup/roles.sql \
+            --file backup/schema.sql \
+            --command 'SET session_replication_role = replica' \
+            --file backup/data.sql \
+            --dbname "$RESTORE_DB_URL"
+          echo "Listo. Ventas restauradas:"
+          psql "$RESTORE_DB_URL" -t -c "SELECT count(*) FROM public.sales"

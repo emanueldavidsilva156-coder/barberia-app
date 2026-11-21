@@ -1,23 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import App from '../App.jsx';
 import AuthScreen from './AuthScreen.jsx';
-import { authService, storageService } from '../services/storageService';
+import { authService, store } from '../services/store.js';
 
 export default function AuthGate() {
   const [status, setStatus] = useState('checking');
   const [error, setError] = useState('');
-  const [userRole, setUserRole] = useState(null);
+  const [profile, setProfile] = useState(null);
 
-  const initializeApp = useCallback(async (session) => {
+  const startApp = useCallback(async () => {
     setStatus('loading');
     setError('');
     try {
-      storageService.setAuthenticatedUser(session.role, session.user.id);
-      setUserRole(session.role);
-      await storageService.initializeSharedData();
+      setProfile(await store.start());
       setStatus('ready');
-    } catch (syncError) {
-      setError(syncError.message || 'No se pudo conectar con la base de datos.');
+    } catch (startError) {
+      setError(startError.message || 'No se pudo conectar con la base de datos.');
       setStatus('error');
     }
   }, []);
@@ -29,12 +27,12 @@ export default function AuthGate() {
         setStatus('login');
         return;
       }
-      await initializeApp(session);
+      await startApp();
     } catch (sessionError) {
       setError(sessionError.message || 'No se pudo validar la sesión.');
       setStatus('error');
     }
-  }, [initializeApp]);
+  }, [startApp]);
 
   useEffect(() => {
     void restoreSession();
@@ -42,14 +40,8 @@ export default function AuthGate() {
 
   const handleLogin = async (username, password) => {
     setError('');
-    try {
-      const session = await authService.signIn(username, password);
-      await initializeApp(session);
-    } catch (loginError) {
-      setError(loginError.message || 'No se pudo iniciar sesión.');
-      setStatus('login');
-      throw loginError;
-    }
+    await authService.signIn(username, password);
+    await startApp();
   };
 
   const handleSignOut = async () => {
@@ -58,8 +50,7 @@ export default function AuthGate() {
     } catch (signOutError) {
       setError(signOutError.message || 'No se pudo cerrar la sesión en el servidor.');
     } finally {
-      storageService.clearSensitiveLocalData();
-      setUserRole(null);
+      setProfile(null);
       setStatus('login');
     }
   };
@@ -67,7 +58,7 @@ export default function AuthGate() {
   if (status === 'checking' || status === 'loading') {
     return (
       <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: 'var(--text-muted)' }}>
-        {status === 'checking' ? 'Verificando sesión...' : 'Conectando con Supabase...'}
+        {status === 'checking' ? 'Verificando sesión...' : 'Conectando con la base de datos...'}
       </main>
     );
   }
@@ -76,12 +67,12 @@ export default function AuthGate() {
   }
   if (status === 'error') {
     return (
-      <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '14px', color: 'var(--text-muted)' }}>
+      <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '14px', padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
         <p>{error}</p>
         <button className="btn btn-primary" onClick={() => void restoreSession()}>Reintentar conexión</button>
         <button className="btn btn-secondary" onClick={() => void handleSignOut()}>Volver al inicio de sesión</button>
       </main>
     );
   }
-  return <App userRole={userRole} onSignOut={handleSignOut} />;
+  return <App profile={profile} onSignOut={handleSignOut} />;
 }

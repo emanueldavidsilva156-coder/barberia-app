@@ -1,74 +1,58 @@
-import { useState, useEffect, Suspense, lazy } from 'react';
+import { useState, Suspense, lazy } from 'react';
 import Navbar from './components/Navbar';
-import { storageService } from './services/storageService';
+import { store } from './services/store.js';
+import { useStoreVersion } from './services/useStore.js';
 
 const DailyCashRegister = lazy(() => import('./components/DailyCashRegister'));
 const CustomerDatabase = lazy(() => import('./components/CustomerDatabase'));
 const MonthlySummary = lazy(() => import('./components/MonthlySummary'));
 const SettingsModal = lazy(() => import('./components/SettingsModal'));
 
-export default function App({ onSignOut, userRole }) {
+export default function App({ onSignOut, profile }) {
+  useStoreVersion();
   const [activeTab, setActiveTab] = useState('caja'); // 'caja' | 'clientes' | 'resumen'
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [syncError, setSyncError] = useState('');
-  const [isSyncing, setIsSyncing] = useState(false);
-
-  useEffect(() => storageService.onSyncStatus(({ status, error }) => {
-    setSyncError(status === 'error' ? error : '');
-    setIsSyncing(status === 'syncing');
-  }), []);
+  const isAdmin = profile.role === 'admin';
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      
-      {/* Navigation Header with Role Protection */}
-      <Navbar 
-        activeTab={activeTab} 
+      <Navbar
+        activeTab={activeTab}
         setActiveTab={setActiveTab}
-        userRole={userRole}
+        profile={profile}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onSignOut={onSignOut}
       />
 
-      {isSyncing && !syncError && (
-        <div role="status" style={{ padding: '8px 16px', background: '#78350f', color: '#fff', textAlign: 'center' }}>
-          Guardando cambios en Supabase… Esperá a que termine la sincronización.
+      {store.connection !== 'online' && (
+        <div role="status" style={{ padding: '8px 16px', background: '#78350f', color: '#fff', textAlign: 'center', fontSize: '0.9rem' }}>
+          Conectando en tiempo real… Si no tenés internet, lo que cargues no se va a guardar hasta que vuelva la conexión.
         </div>
       )}
 
-      {syncError && (
+      {store.error && (
         <div role="alert" style={{ padding: '10px 16px', background: '#7f1d1d', color: '#fff', textAlign: 'center' }}>
-          No se pudo guardar en Supabase: {syncError}
-          <button
-            className="btn btn-secondary btn-sm"
-            style={{ marginLeft: '12px' }}
-            onClick={() => storageService.syncPendingChanges().catch(() => {})}
-          >
-            Reintentar
+          {store.error}
+          <button className="btn btn-secondary btn-sm" style={{ marginLeft: '12px' }} onClick={store.clearError}>
+            Cerrar
           </button>
         </div>
       )}
 
-      {/* Main View Content */}
       <main className="main-content" style={{ flex: 1, padding: '10px 0' }}>
         <Suspense fallback={<div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>Cargando...</div>}>
-          {activeTab === 'caja' && <DailyCashRegister isAdmin={userRole === 'admin'} />}
-          {activeTab === 'clientes' && <CustomerDatabase isAdmin={userRole === 'admin'} />}
-          {userRole === 'admin' && activeTab === 'resumen' && <MonthlySummary />}
+          {activeTab === 'caja' && <DailyCashRegister />}
+          {activeTab === 'clientes' && <CustomerDatabase />}
+          {activeTab === 'resumen' && <MonthlySummary />}
         </Suspense>
       </main>
 
-      {/* Modal Settings */}
       <Suspense fallback={null}>
-        {userRole === 'admin' && (
-          <SettingsModal
-            isOpen={isSettingsOpen}
-            onClose={() => setIsSettingsOpen(false)}
-          />
+        {isAdmin && isSettingsOpen && (
+          <SettingsModal onClose={() => setIsSettingsOpen(false)} />
         )}
       </Suspense>
 
-      {/* Desktop Footer */}
       <footer style={{
         textAlign: 'center',
         padding: '16px 20px',
@@ -79,7 +63,6 @@ export default function App({ onSignOut, userRole }) {
       }}>
         RADIKAL &copy; {new Date().getFullYear()} - Sistema de Gestión, Caja Diaria y Finanzas para la barbería.
       </footer>
-
     </div>
   );
 }

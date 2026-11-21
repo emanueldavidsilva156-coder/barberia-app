@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { LockKeyhole, Mail, Scissors, LogIn } from 'lucide-react';
+import { LockKeyhole, User, Scissors, LogIn } from 'lucide-react';
 
 export default function AuthScreen({ onLogin, isConfigured, error: initialError = '' }) {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(initialError);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -12,7 +12,7 @@ export default function AuthScreen({ onLogin, isConfigured, error: initialError 
     setError('');
     setIsSubmitting(true);
     try {
-      await onLogin(email.trim(), password);
+      await onLogin(username.trim(), password);
     } catch (loginError) {
       setError(loginError.message || 'No se pudo iniciar sesión.');
     } finally {
@@ -40,8 +40,8 @@ export default function AuthScreen({ onLogin, isConfigured, error: initialError 
             </p>
           )}
           <div className="form-group">
-            <label className="form-label"><Mail size={14} /> Email</label>
-            <input className="form-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="username" />
+            <label className="form-label"><User size={14} /> Usuario</label>
+            <input className="form-input" type="text" value={username} onChange={(event) => setUsername(event.target.value)} required autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="ej. diego" />
           </div>
 
           <div className="form-group">

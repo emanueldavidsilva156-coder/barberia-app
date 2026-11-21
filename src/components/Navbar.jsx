@@ -1,10 +1,9 @@
 import { Users, TrendingUp, Settings, Scissors, DollarSign, ShieldCheck, LogOut } from 'lucide-react';
 
-export default function Navbar({ activeTab, setActiveTab, userRole, onOpenSettings, onSignOut }) {
-  const isAdmin = userRole === 'admin';
+export default function Navbar({ activeTab, setActiveTab, profile, onOpenSettings, onSignOut }) {
+  const isAdmin = profile.role === 'admin';
 
   const handleTabClick = (tabId) => {
-    if (tabId === 'resumen' && !isAdmin) return;
     setActiveTab(tabId);
   };
 
@@ -85,8 +84,8 @@ export default function Navbar({ activeTab, setActiveTab, userRole, onOpenSettin
               <span>Clientes & WA</span>
             </button>
 
-            {/* Resumen Mensual Contable (Protected for Admin Ema) */}
-            {isAdmin && <button
+            {/* Resumen y liquidaciones: todos; cada sección se muestra según el usuario */}
+            <button
               onClick={() => handleTabClick('resumen')}
               className="btn"
               style={{
@@ -98,14 +97,14 @@ export default function Navbar({ activeTab, setActiveTab, userRole, onOpenSettin
               }}
             >
               <TrendingUp size={18} />
-              <span>Resumen Mensual</span>
-            </button>}
+              <span>Resumen y Liquidación</span>
+            </button>
           </nav>
 
           {/* Role Switcher Badge & Settings */}
           <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span className="badge" style={{ background: isAdmin ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.15)', color: isAdmin ? '#34d399' : 'var(--text-muted)', border: '1px solid var(--border-color)', padding: '6px 12px' }}>
-              <ShieldCheck size={14} /> {isAdmin ? 'Administración' : 'Empleado'}
+              <ShieldCheck size={14} /> {profile.display_name} · {isAdmin ? 'Administración' : 'Barbero'}
             </span>
 
             {isAdmin && <button
@@ -144,13 +143,13 @@ export default function Navbar({ activeTab, setActiveTab, userRole, onOpenSettin
           <span>Clientes</span>
         </button>
 
-        {isAdmin && <button
+        <button
           onClick={() => handleTabClick('resumen')}
           className={`mobile-nav-item ${activeTab === 'resumen' ? 'active' : ''}`}
         >
           <TrendingUp size={20} />
           <span>Resumen</span>
-        </button>}
+        </button>
       </nav>
     </>
   );
