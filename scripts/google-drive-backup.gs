@@ -6,6 +6,11 @@
 // "Barberia - Backups Supabase". Las copias se guardan comprimidas (.json.gz)
 // y no se borran nunca. Si el Drive se está llenando, manda un aviso por mail.
 //
+// Si Supabase no responde (errores 5xx como 522, 429 o cortes de red), cada
+// consulta se reintenta sola unas veces. Si aun así falla, el backup completo se
+// vuelve a probar cada 1 hora, hasta 3 veces; el mail de error de Google llega
+// solo si fallan todos los intentos.
+//
 // Propiedades del script que hay que cargar (Configuración del proyecto >
 // Propiedades del script):
 //   SUPABASE_URL               https://xxxx.supabase.co
@@ -15,6 +20,11 @@ const BACKUP_FOLDER_NAME = 'Barberia - Backups Supabase';
 const DAILY_BACKUP_FUNCTION = 'createSupabaseDriveBackup';
 const BACKUP_TIME_ZONE = 'America/Argentina/Cordoba';
 const DRIVE_WARNING_RATIO = 0.8;
+const RETRY_FUNCTION = 'retrySupabaseDriveBackup';
+// Esperas entre intentos de una misma consulta, en segundos (Apps Script corta a los 6 minutos).
+const FETCH_RETRY_WAITS = [5, 20, 40];
+const LATER_RETRY_MINUTES = 60;
+const MAX_LATER_RETRIES = 3;
 
 // Tabla -> columna para ordenar (necesario para leer por páginas sin saltear filas).
 const TABLES = {
@@ -34,12 +44,9 @@ const TABLES = {
 
 function installDailyBackup() {
   getConfig_();
-  createSupabaseDriveBackup();
+  runBackup_();
 
-  ScriptApp.getProjectTriggers()
-    .filter(trigger => trigger.getHandlerFunction() === DAILY_BACKUP_FUNCTION)
-    .forEach(trigger => ScriptApp.deleteTrigger(trigger));
-
+  deleteTriggers_(DAILY_BACKUP_FUNCTION);
   ScriptApp.newTrigger(DAILY_BACKUP_FUNCTION)
     .timeBased()
     .everyDays(1)
@@ -48,7 +55,39 @@ function installDailyBackup() {
     .create();
 }
 
+// Corre todas las noches a las 3 AM.
 function createSupabaseDriveBackup() {
+  PropertiesService.getScriptProperties().setProperty('LATER_RETRIES', '0');
+  attemptBackup_();
+}
+
+// Reintento programado cuando el backup de la noche no pudo terminar.
+function retrySupabaseDriveBackup() {
+  attemptBackup_();
+}
+
+function attemptBackup_() {
+  deleteTriggers_(RETRY_FUNCTION);
+  try {
+    runBackup_();
+  } catch (error) {
+    const properties = PropertiesService.getScriptProperties();
+    const retries = Number(properties.getProperty('LATER_RETRIES') || 0);
+    // Errores que no se arreglan solos (clave mal cargada, tabla inexistente) se avisan enseguida.
+    if (error.permanent || retries >= MAX_LATER_RETRIES) throw error;
+    properties.setProperty('LATER_RETRIES', String(retries + 1));
+    ScriptApp.newTrigger(RETRY_FUNCTION).timeBased().after(LATER_RETRY_MINUTES * 60 * 1000).create();
+    console.warn(`El backup falló (${error.message}). Reintento ${retries + 1} de ${MAX_LATER_RETRIES} en ${LATER_RETRY_MINUTES} minutos.`);
+  }
+}
+
+function deleteTriggers_(handlerFunction) {
+  ScriptApp.getProjectTriggers()
+    .filter(trigger => trigger.getHandlerFunction() === handlerFunction)
+    .forEach(trigger => ScriptApp.deleteTrigger(trigger));
+}
+
+function runBackup_() {
   const { baseUrl, headers } = getConfig_();
   const timestamp = new Date();
   const tables = {};
@@ -79,21 +118,43 @@ function fetchTable_(baseUrl, table, orderColumn, headers) {
   const pageSize = 1000;
 
   for (let start = 0; ; start += pageSize) {
-    const response = UrlFetchApp.fetch(`${baseUrl}/rest/v1/${table}?select=*&order=${orderColumn}.asc`, {
+    const text = fetchWithRetry_(table, `${baseUrl}/rest/v1/${table}?select=*&order=${orderColumn}.asc`, {
       method: 'get',
       headers: { ...headers, 'Range-Unit': 'items', Range: `${start}-${start + pageSize - 1}` },
       muteHttpExceptions: true
     });
-    const status = response.getResponseCode();
-    if (status < 200 || status >= 300) {
-      throw new Error(`No se pudo respaldar la tabla ${table}. Supabase respondió HTTP ${status}: ${response.getContentText().slice(0, 300)}`);
-    }
-    const page = JSON.parse(response.getContentText());
+    const page = JSON.parse(text);
     if (!Array.isArray(page)) {
       throw new Error(`La respuesta de ${table} no tiene el formato esperado; no se guardó el backup.`);
     }
     rows.push(...page);
     if (page.length < pageSize) return rows;
+  }
+}
+
+function fetchWithRetry_(table, url, options) {
+  for (let attempt = 0; ; attempt++) {
+    let status;
+    let text;
+    try {
+      const response = UrlFetchApp.fetch(url, options);
+      status = response.getResponseCode();
+      text = response.getContentText();
+    } catch (error) {
+      // Sin respuesta: tiempo de espera agotado o corte de red.
+      status = 0;
+      text = error.message;
+    }
+    if (status >= 200 && status < 300) return text;
+
+    const transient = status === 0 || status === 429 || status >= 500;
+    if (!transient || attempt >= FETCH_RETRY_WAITS.length) {
+      const error = new Error(`No se pudo respaldar la tabla ${table}. Supabase respondió ` +
+        `${status ? `HTTP ${status}` : 'sin conexión'} (intento ${attempt + 1}): ${text.slice(0, 300)}`);
+      error.permanent = !transient;
+      throw error;
+    }
+    Utilities.sleep(FETCH_RETRY_WAITS[attempt] * 1000);
   }
 }
 
